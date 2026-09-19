@@ -1,0 +1,186 @@
+# Speech-to-Text Server
+
+Express backend that turns a recorded audio clip into text using FFmpeg and
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp). The API is defined in
+[`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md).
+
+```
+browser recording ─▶ POST /api/transcribe ─▶ FFmpeg (16 kHz mono WAV) ─▶ whisper-cli ─▶ JSON
+```
+
+## Requirements
+
+- Node.js 22.9 or newer (developed on 24)
+- FFmpeg
+- whisper.cpp (`whisper-cli`)
+- A whisper.cpp model file (`small.en`, about 488 MB)
+
+## Setup
+
+macOS (Homebrew):
+
+```bash
+brew install ffmpeg whisper-cpp
+```
+
+Homebrew's `whisper-cpp` formula installs the official whisper.cpp `whisper-cli` binary.
+On Linux or Windows, install FFmpeg from your package manager and build whisper.cpp
+following its [documentation](https://github.com/ggml-org/whisper.cpp#quick-start)
+(`cmake -B build && cmake --build build -j --config Release`, giving
+`build/bin/whisper-cli`), then set `WHISPER_BIN` to that path.
+
+Then, from the repository root:
+
+```bash
+cd server
+npm install
+npm run setup:model      # downloads models/ggml-small.en.bin + the VAD model (git-ignored)
+```
+
+`setup:model` accepts another model name: `sh scripts/download-model.sh base.en`
+(then set `WHISPER_MODEL=models/ggml-base.en.bin`). `base.en` (148 MB) is faster and
+lighter but less accurate on accents, noise and medical terms. Model files are never committed.
+
+## Preflight check and warm-up
+
+```bash
+npm run doctor
+```
+
+Checks FFmpeg, `whisper-cli`, both model files and the port, prints a fix for anything
+missing, then runs a real transcription of a bundled clip. Run it before a demo: it also
+warms up the GPU (the first whisper run after install can take about 15 s).
+
+## Run
+
+```bash
+npm run dev      # auto-restart on changes
+npm start        # production mode
+```
+
+The server listens on `http://localhost:3001`. Check it:
+
+```bash
+curl http://localhost:3001/api/health          # {"status":"ok"}
+curl -X POST http://localhost:3001/api/transcribe -F "audio=@recording.webm"
+# {"text":"And so my fellow Americans, ...","durationSeconds":11}
+```
+
+Add `?segments=1` to also get timestamped segments (see the contract); the default response
+is unchanged.
+
+If anything is missing at startup the server still starts, logs what is missing, and
+`/api/health` returns `{"status":"unavailable"}` (HTTP 503).
+
+## Configuration
+
+Copy `.env.example` to `.env` to override any of these. All are optional.
+
+| Variable               | Default                     | Meaning                                              |
+| ---------------------- | --------------------------- | ---------------------------------------------------- |
+| `PORT`                 | `3001`                      | Listen port                                          |
+| `CORS_ORIGIN`          | `http://localhost:5173`     | Browser origin allowed to call the API (`*` for any) |
+| `FFMPEG_BIN`           | `ffmpeg`                    | FFmpeg executable (name on PATH or absolute path)    |
+| `WHISPER_BIN`          | `whisper-cli`               | whisper.cpp executable                               |
+| `WHISPER_MODEL`        | `models/ggml-small.en.bin`   | Model file, relative to `server/`                    |
+| `WHISPER_VAD_MODEL`    | `models/ggml-silero-v5.1.2.bin` | Voice activity detection model (empty value disables) |
+| `WHISPER_LANGUAGE`     | `en`                        | Language code (`auto` needs a multilingual model)    |
+| `WHISPER_THREADS`      | `4`                         | CPU threads for whisper                              |
+| `MAX_UPLOAD_BYTES`     | `10485760`                  | Upload size limit (10 MB)                            |
+| `MAX_DURATION_SECONDS` | `60`                        | Audio length limit                                   |
+| `PROCESS_TIMEOUT_MS`   | `120000`                    | Total conversion + inference budget per request      |
+| `MAX_CONCURRENT`       | `2`                         | Simultaneous transcriptions; extra requests get 503  |
+| `STT_TMP_DIR`          | OS temp dir + `/stt-server` | Where temporary audio lives                          |
+
+## Demo hosting: laptop + tunnel
+
+The deployed frontend (Vercel) cannot run whisper.cpp or FFmpeg, so the demo runs this
+server on a laptop and exposes it through an HTTPS tunnel:
+
+1. Start the server: `npm start`.
+2. Start a tunnel to port 3001 with a tool of your choice, for example
+   `cloudflared tunnel --url http://localhost:3001` or `ngrok http 3001`.
+3. Set `CORS_ORIGIN` in `.env` to the deployed frontend's origin (for example
+   `https://your-app.vercel.app`) and restart. Point the frontend's API base URL at the
+   tunnel URL. A browser blocks an `https` page from calling plain `http`, so use the
+   tunnel's `https` URL.
+4. Keep the laptop awake and plugged in. Warm the model with one request before the demo
+   (the first run after boot is slower).
+
+Tunnel URLs are public. There is no authentication in the MVP, so share the URL only
+for the demo and stop the tunnel afterwards.
+
+## Tests
+
+```bash
+npm test
+```
+
+- `tests/api.test.js`: validation, limits, error codes, timeouts, concurrency, cleanup.
+  Several of these swap whisper for a small fake shell script to exercise subprocess
+  failures deterministically. **Those tests do not prove speech recognition works.**
+- `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
+  `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,
+  WebM/Opus and header-less streamed WebM (what browsers record), asserts the actual
+  transcript, and checks that silence and quiet noise report no speech. These are reported as skipped if
+  FFmpeg, whisper.cpp or the model is missing.
+
+## Silence handling
+
+Whisper alone invents text ("you", "Thank you.") for silent or noisy-but-empty audio.
+The server enables whisper.cpp's built-in Silero voice activity detection (`--vad`,
+a 0.9 MB model downloaded by `setup:model`), so those recordings return
+`TRANSCRIPTION_FAILED` (422, "No speech was detected in the recording."). Without the VAD
+model file the server still works but logs a warning at startup and may hallucinate on silence.
+
+## Inference command (verified)
+
+The server runs the equivalent of this, after converting the upload to 16 kHz mono PCM16 WAV:
+
+```bash
+ffmpeg -i upload -vn -t 61 -ac 1 -ar 16000 -c:a pcm_s16le -f wav audio.wav
+whisper-cli -m models/ggml-small.en.bin -f audio.wav -l en -t 4 -sns -np --vad -vm models/ggml-silero-v5.1.2.bin -oj -of result
+# result.json -> transcription[].text
+```
+
+Measured on an Apple M4 Pro (Metal GPU): with `small.en`, an 11 s clip transcribes in
+about 0.45 s and a 55 s clip in about 1.4 s (whisper only). `base.en` is about 2-3x
+faster (55 s WebM/Opus upload end to end in 0.6-0.7 s). The very
+first whisper run after install can take about 15 s while Metal shaders compile; later
+runs are fast. CPU-only machines will be slower; use a smaller model or raise
+`PROCESS_TIMEOUT_MS` if needed.
+
+## Layout
+
+```
+server/
+  index.js              start the server
+  app.js                Express app factory (used by tests)
+  config.js             environment -> config
+  routes/               health.js, transcribe.js
+  services/             audio.js (FFmpeg), whisper.js, limiter.js, readiness.js
+  middleware/           upload.js (multer), errors.js (CORS + error handler)
+  lib/                  errors.js, exec.js (spawn without a shell)
+  scripts/              download-model.sh, doctor.js
+  tests/
+```
+
+## Security notes
+
+- Subprocesses run with argument arrays and no shell. Uploads are stored under random
+  names in a private temp dir; the client filename is never used as a path.
+- FFmpeg is run with `-protocol_whitelist file` so an uploaded playlist cannot make it
+  fetch network resources.
+- Temporary files are deleted before each response, on success and on failure. If the client
+  disconnects mid-request, FFmpeg/whisper are killed and the files removed.
+- Errors returned to clients never contain filesystem paths, stderr, or environment values.
+  Details are logged on the server only.
+
+## Known limitations
+
+- English only by default (`small.en`). Multilingual needs a multilingual model and `WHISPER_LANGUAGE`.
+- Transcription runs after recording stops; there is no streaming.
+- No speaker labels, authentication, or persistence. Timestamps are opt-in (`?segments=1`).
+- Durations up to 60.5 s are accepted, since recorders often overshoot 60 s slightly.
+- When `MAX_CONCURRENT` jobs are running, new requests are rejected with 503 rather than queued.
+- An unclean server kill (SIGKILL, crash) can leave files in the temp dir; they are safe to delete.

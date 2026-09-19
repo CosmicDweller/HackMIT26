@@ -59,3 +59,11 @@ mislead the backend agent or a future session.
 ## Next specific action
 Coordinate with the backend agent on issue #3 to confirm the API contract,
 then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
+
+## Backend status (lz, speech-to-text)
+- `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`
+  (Express + FFmpeg + whisper.cpp `small.en`, real inference verified; ~1.4 s for a 55 s clip on M4 Pro).
+- 32 tests pass (`cd server && npm test`), including 5 real-inference tests (WAV, WebM, header-less WebM, silence, noise). Also: VAD stops phantom text on silence, jobs are cancelled on client disconnect, `npm run doctor` preflight/warm-up, optional `?segments=1` timestamps (proposed on #3; default response unchanged).
+- Setup: `brew install ffmpeg whisper-cpp`, then `cd server && npm install && npm run setup:model`. See `server/README.md`.
+- Proposed contract details (HTTP status codes, CORS, silence -> 422) await frontend confirmation on issue #3.
+- Backend PR #5 is open, not merged or deployed. Vercel cannot run whisper.cpp; demo plan is the backend on a laptop behind an HTTPS tunnel (see `server/README.md`).

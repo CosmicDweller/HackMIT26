@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+# Model weights and temporary audio never go in Git
+models/*
+!models/.gitkeep
+tmp/
+*.wav
+!tests/fixtures/*.wav
+*.webm
+*.m4a
+*.mp3
+*.ogg
