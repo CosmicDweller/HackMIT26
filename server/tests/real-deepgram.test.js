@@ -17,11 +17,12 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()();
 });
 
-async function liveApp() {
+async function liveApp(overrides = {}) {
   const env = await makeConfig({
     supabaseUrl: TEST_SUPABASE_URL, sttEngine: "deepgram", deepgramApiKey: process.env.DEEPGRAM_API_KEY,
     // defaults from the real configuration: nova-3-medical, diarize_model=latest
     deepgramModel: loadConfig(process.env).deepgramModel, deepgramDiarizeModel: loadConfig(process.env).deepgramDiarizeModel,
+    ...overrides,
   });
   cleanups.push(env.cleanup);
   const keys = await makeAuth();
@@ -170,5 +171,43 @@ describe("live Deepgram Nova-3 Medical with the batch diarizer, on synthetic rec
     }
     assert.equal(view.status, "failed");
     assert.equal(view.error.code, "NO_SPEECH");
+  });
+});
+
+// Long recordings cost real money (billed per audio minute), so they need a second, explicit opt-in:
+//   DEEPGRAM_LIVE_TEST=1 DEEPGRAM_LONG_TEST=30 node --env-file=.env --test tests/real-deepgram.test.js
+// (generate the recording first: python3 scripts/make-long-recording.py medical 30 tests/.generated/medical-30min.wav)
+describe("live long recording", () => {
+  test("30-minute conversation: whole-recording diarization, stable speakers, accurate timestamps, bounded memory", async (t) => {
+    if (!LIVE || process.env.DEEPGRAM_LONG_TEST !== "30") return t.skip("set DEEPGRAM_LIVE_TEST=1 and DEEPGRAM_LONG_TEST=30 (bills ~30 minutes of audio)");
+    if (!existsSync(locate("medical-30min").wav)) return t.skip("generate the recording first (see the comment above)");
+    // Only for this test the synchronous limit is raised to the recording's length.
+    const app = await liveApp({ deepgramSyncMaxSeconds: 1900 });
+    const before = process.memoryUsage().rss;
+    let peak = before;
+    const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 50);
+    let result;
+    try {
+      result = await app.transcribe("medical-30min");
+    } finally {
+      clearInterval(timer);
+    }
+    const metrics = app.score(result);
+    const { transcript } = result;
+    const job = app.store.jobById(result.jobId);
+    t.diagnostic(`statuses ${result.seen.join(" -> ")}; wall ${result.seconds.toFixed(1)} s for ${job.duration_seconds} s of audio; segments ${transcript.segments.length}; RSS growth ${Math.round((peak - before) / 1048576)} MB; ${JSON.stringify(metrics)}; needsReview ${transcript.segments.filter((s) => s.needsReview).length}`);
+
+    assert.equal(transcript.diarizationStatus, "completed");
+    assert.equal(transcript.speakers.length, 2, "the same two people for 30 minutes: ids never reset");
+    assert.ok(metrics.der < 0.1, `DER ${metrics.der}`);
+    assert.ok(metrics.wer < 0.1, `WER ${metrics.wer}`);
+    assert.ok(result.seconds < 9 * 60, "finished inside the synchronous limit");
+    const { segments } = transcript;
+    assert.ok(segments.at(-1).endMs > 1_740_000, "timestamps run to the end of the 30 minutes");
+    for (let i = 1; i < segments.length; i++) assert.ok(segments[i].startMs >= segments[i - 1].startMs, "no timestamp reset");
+    const reps = JSON.parse(readFileSync(locate("medical-30min").truthPath, "utf8")).turns.filter((turn) => /shortness of breath/.test(turn.text)).length;
+    assert.equal((transcript.text.match(/shortness of breath/gi) ?? []).length, reps, "no duplicated or missing content across the recording");
+    assert.ok(peak - before < 400 * 1024 * 1024, `memory grew ${Math.round((peak - before) / 1048576)} MB`);
+    assert.deepEqual(await leftoverFiles(app.config.uploadDir), []);
   });
 });

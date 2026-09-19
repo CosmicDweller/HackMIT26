@@ -503,7 +503,8 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 | Medical vocabulary (31 s) | 2/2 | 1.4% | 1.1% | 100% |
 | One speaker (9 s) | 1/1 | 0.0% | 0.4% | 100% |
 | Overlapping speech (14 s) | 2/2 | 2.5% | 1.3% | 84.6% |
-| Medical, 5 minutes | 2/2 | 0.9% | 0.6% | 100% |
+| Medical, 5 minutes (289 s) | 2/2 | 0.9% | 0.6% | 100% |
+| Medical, 30 minutes (1799 s, 392 turns) | 2/2 | 0.7% | 0.6% | 99.8% |
 | Silence / pink noise | no words, reported as no speech | | | |
 
 **Failures and limits, honestly:**
@@ -515,16 +516,16 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 - The review flag marked about 40% of segments in the 5-minute medical test (long content words below 0.85 confidence). It is a
   heuristic tuned on tiny synthetic data; the threshold is configurable (`REVIEW_WORD_CONFIDENCE`).
 - The evaluation audio is text-to-speech. Real microphones, accents, crosstalk and clinical noise are unevaluated.
-- Diarization and transcription accuracy on 30-minute and two-hour recordings has NOT been tested against the real service (see below).
+- Accuracy on a two-hour recording has NOT been tested against the real service (see below). The 30-minute recording was, and it is the same repeated conversation, so it shows scale, not variety.
 
 ## Verified vs not yet verified
 
 Verified with real Deepgram and synthetic audio: the exact request; the real response shape, `diarize_info`, model reporting;
-30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise and a 5-minute recording through the full stack; job statuses; persistence and reopening.
+30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise, a 5-minute and a **30-minute** recording through the full stack; job statuses; persistence and reopening. The 30-minute recording (1799 s) finished in 8.1 s end to end (FFmpeg verification, upload, Deepgram), inside the synchronous limit, with 2 stable speakers, WER 0.7%, DER 0.6%, timestamps to the end and no duplicated content. The server process itself grew by 54 MB (77 to 131 MB) while processing it, measured in a separate process, so streaming is bounded.
 Verified with a stub (real captured responses): failure handling, retries, restart recovery, retention, callbacks and their authentication.
 Verified with real FFmpeg and a stub: a real 7200 s recording is accepted and a 7205 s one is rejected.
-**Not verified:** a 30-minute or 2-hour recording against the real service; callbacks against the real service (needs a public URL);
-real patient audio. A two-hour recording must not be assumed to work until that test has been run.
+**Not verified:** a **2-hour** recording against the real service (it should fit inside Deepgram's 10-minute synchronous limit given the 30-minute timing, but that is an estimate, not a result); callbacks against the real service (needs a public URL);
+real patient audio. A two-hour recording must not be assumed to work until that test has been run. Until then `DEEPGRAM_SYNC_MAX_SECONDS` stays at 1800 s, so anything longer is rejected before any audio is sent.
 
 ## Open coordination points (frontend)
 
