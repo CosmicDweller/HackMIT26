@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.js";
 import { executableExists, fileExists, run } from "../lib/exec.js";
 import { convertToWav } from "../services/audio.js";
+import { diarizationSetup, diarizeWav } from "../services/diarization.js";
 import { transcribeWav } from "../services/whisper.js";
 
 const config = loadConfig();
@@ -71,6 +72,33 @@ if (!config.whisperVadModel) {
   warn("VAD model missing: silent recordings may produce phantom text such as \"you\"", "npm run setup:model");
 }
 
+console.log("\nSpeaker diarization");
+const diarization = await diarizationSetup(config);
+const diarizationReady = diarization.enabled && diarization.python && diarization.script && diarization.models;
+if (!diarization.enabled) {
+  warn("disabled (DIARIZATION_ENABLED=false): transcripts will have no speaker labels");
+} else if (diarizationReady) {
+  ok("Python environment and models found");
+} else {
+  warn("not installed: transcripts will have no speaker labels", "npm run setup:diarization");
+}
+
+console.log("\nSpeech engine");
+if (config.sttEngine === "deepgram") {
+  if (config.deepgramApiKey) warn(`Deepgram is ON (model ${config.deepgramModel}): audio from authenticated transcriptions leaves this machine (mip_opt_out=true)`, "set STT_ENGINE=local to keep everything on this machine");
+  else warn("STT_ENGINE=deepgram but DEEPGRAM_API_KEY is empty: the local engine will be used");
+} else {
+  ok("local (audio never leaves this machine)");
+}
+
+console.log("\nAccounts");
+if (config.supabaseUrl) {
+  ok(`Supabase Auth configured (${new URL(config.supabaseUrl).host})`);
+} else {
+  warn("SUPABASE_URL is not set: /api/transcriptions and /api/me will reject every request", "set SUPABASE_URL in server/.env");
+}
+console.log(`  info  transcripts are stored in ${path.relative(serverDir, config.dbPath)} (never commit it)`);
+
 console.log("\nEnvironment");
 if (await portIsFree(config.port)) {
   ok(`port ${config.port} is free`);
@@ -86,10 +114,21 @@ if (failures === 0) {
     const started = Date.now();
     const wav = path.join(workDir, "audio.wav");
     const { durationSeconds } = await convertToWav(sample, wav, config, config.processTimeoutMs);
-    const text = await transcribeWav(wav, workDir, config, config.processTimeoutMs);
+    const { text } = await transcribeWav(wav, workDir, config, config.processTimeoutMs);
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     if (/ask not what your country can do for you/i.test(text)) {
       ok(`transcribed ${durationSeconds} s of audio in ${seconds} s: "${text}"`);
+      if (diarizationReady) {
+        const two = path.join(serverDir, "tests", "fixtures", "synthetic", "two-speaker.wav");
+        const started = Date.now();
+        const result = await diarizeWav(two, config, { timeoutMs: config.diarizationTimeoutMs });
+        const took = ((Date.now() - started) / 1000).toFixed(1);
+        if (result.status === "ok" && result.speakerCount === 2) {
+          ok(`diarization found 2 speakers in a synthetic conversation in ${took} s`);
+        } else {
+          fail(`diarization returned status ${result.status} with ${result.speakerCount} speakers (expected 2)`, "npm run setup:diarization");
+        }
+      }
     } else {
       fail(`unexpected transcript: "${text}"`, "check the model file is not corrupt (delete it and run npm run setup:model)");
     }

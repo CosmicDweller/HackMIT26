@@ -284,6 +284,14 @@ describe("concurrency limit and CORS", () => {
     const { baseUrl } = await setup();
     const allowed = await fetch(`${baseUrl}/api/health`, { headers: { Origin: "http://localhost:5173" } });
     assert.equal(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173");
+    const preflight = await fetch(`${baseUrl}/api/transcriptions/tr_x`, {
+      method: "OPTIONS",
+      headers: { Origin: "http://localhost:5173", "Access-Control-Request-Method": "PATCH", "Access-Control-Request-Headers": "authorization,content-type" },
+    });
+    assert.equal(preflight.status, 204);
+    assert.match(preflight.headers.get("access-control-allow-methods"), /PATCH/);
+    assert.match(preflight.headers.get("access-control-allow-methods"), /DELETE/);
+    assert.match(preflight.headers.get("access-control-allow-headers"), /Authorization/);
     const other = await fetch(`${baseUrl}/api/health`, { headers: { Origin: "http://evil.example" } });
     assert.equal(other.headers.get("access-control-allow-origin"), null);
   });
