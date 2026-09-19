@@ -4,18 +4,23 @@
 Project setup / interface definition. No application code written yet.
 
 ## Completed features
-- None yet.
+- Frontend scaffold (`frontend/`): Vite + React + TypeScript + Tailwind v4 + shadcn/ui.
+- Core UI flow, wired end-to-end against mock data: voice enrollment (real
+  in-browser mic recording) → record patient visit (real mic recording) →
+  timestamped, speaker-labeled transcript → SOAP note with claims linking back
+  to specific transcript chunks.
+- Stub API client (`frontend/src/api/client.ts`) isolates the not-yet-defined
+  backend calls (enroll voice profile, upload recording, get transcript, get
+  SOAP note) so real endpoints can be swapped in without touching UI code.
 
 ## Remaining prioritized tasks
-1. Define full API contract for the core pipeline (audio intake, voice profiling,
-   transcription, LLM extraction, SOAP note generation) — only the TTS endpoint
-   (`API_contract.md`) is specified so far.
-2. Scaffold frontend (React + Tailwind + shadcn/ui) and backend (Express + TypeScript).
-3. Implement audio input and voice profile generation.
-4. Implement live transcription with speaker labeling (Doctor | Patient).
-5. Implement LLM extraction pipeline and SOAP note generation.
-6. Link SOAP note claims to transcript chunk ids.
-7. Deploy to Vercel.
+1. Define API contract for the core pipeline (voice profiling, transcription,
+   LLM extraction, SOAP note generation) — only the unrelated TTS endpoint
+   (`API_contract.md`) is specified so far. Open question posted on issue #3.
+2. Scaffold backend (Express + TypeScript).
+3. Wire real voice profile generation, transcription, and SOAP generation
+   behind the existing stub API client.
+4. Deploy to Vercel.
 
 ## Architectural decisions
 - Node.js/Express/TypeScript backend, React/Tailwind/shadcn frontend, Supabase only
@@ -25,11 +30,19 @@ Project setup / interface definition. No application code written yet.
 
 ## Known bugs and blockers
 - API contract only covers text-to-speech; the audio-in/transcript/SOAP-note
-  interface (the core product flow) is not yet defined.
+  interface (the core product flow) is not yet defined. Frontend is built
+  against mock data in the meantime via a stub API client.
+- Mobile-width layout not manually verified (browser automation could not
+  resize the viewport this session); UI uses relative/flex-wrap classes only,
+  no fixed widths, so it should reflow, but this is unconfirmed.
 
 ## Test and deployment status
-- No tests written. No deployment yet.
+- No automated tests written. Manually verified in Chrome: enrollment screen
+  renders and records via MediaRecorder, SOAP note renders mock data, and
+  claim → transcript chunk deep links correctly scroll/highlight. Lint
+  (`oxlint`) and typecheck/build (`tsc -b && vite build`) pass. No deployment yet.
 
 ## Next specific action
-Agree on and document the API contract for the transcription and SOAP note
-pipeline, then begin scaffolding frontend/backend implementations.
+Agree on the API contract for the transcription/SOAP-note pipeline with the
+backend agent (tracked on issue #3), then wire the stub API client to real
+endpoints.
