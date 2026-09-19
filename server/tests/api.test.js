@@ -149,6 +149,26 @@ describe("POST /api/transcribe response (mocked whisper subprocess)", () => {
     assert.equal(body.durationSeconds, 11);
   });
 
+  test("adds timestamped segments only when ?segments=1 is requested", async () => {
+    const { baseUrl } = await setup({ fakeMode: "ok" });
+    const audio = await readFixture();
+    const form = () => {
+      const f = new FormData();
+      f.append("audio", new Blob([audio], { type: "audio/wav" }), "a.wav");
+      return f;
+    };
+    const withSegments = await (await fetch(`${baseUrl}/api/transcribe?segments=1`, { method: "POST", body: form() })).json();
+    assert.deepEqual(Object.keys(withSegments).sort(), ["durationSeconds", "segments", "text"]);
+    assert.deepEqual(withSegments.segments, [
+      { start: 0.25, end: 1.5, text: "Hello" },
+      { start: 1.5, end: 3, text: "world." },
+    ]);
+    assert.equal(withSegments.text, "Hello world.");
+
+    const plain = await (await fetch(`${baseUrl}/api/transcribe`, { method: "POST", body: form() })).json();
+    assert.deepEqual(Object.keys(plain).sort(), ["durationSeconds", "text"]);
+  });
+
   test("ignores a hostile client filename and leaves no temp files behind", async () => {
     const { baseUrl, tmpDir } = await setup({ fakeMode: "ok" });
     const res = await postAudio(baseUrl, await readFixture(), { filename: "../../../../tmp/evil.wav" });

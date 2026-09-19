@@ -81,6 +81,26 @@ Notes on the proposed HTTP statuses:
 - When the server is busy it returns `SERVICE_UNAVAILABLE` (503) with a `Retry-After`
   header; the client may retry.
 
+### Optional timestamps _(proposed, additive)_
+
+`POST /api/transcribe?segments=1` adds a `segments` array to the success response. Without
+the query parameter the response is exactly the shape above, so existing clients are unaffected.
+
+```json
+{
+  "text": "And so, my fellow Americans, ask not what your country can do for you.",
+  "durationSeconds": 11,
+  "segments": [
+    { "start": 0.29, "end": 3.08, "text": "And so, my fellow Americans," },
+    { "start": 3.08, "end": 8.1, "text": "ask not what your country can do for you." }
+  ]
+}
+```
+
+`start` and `end` are seconds from the beginning of the submitted audio. Segments are ordered,
+never empty, and joining their `text` with a space gives `text`. The frontend does not need
+this today; it exists for a future timestamped transcript.
+
 ## GET /api/health
 
 Reports whether transcription can currently run (FFmpeg, whisper.cpp executable and

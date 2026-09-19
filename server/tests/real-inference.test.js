@@ -111,3 +111,23 @@ test("real whisper.cpp transcribes WebM that has no duration header (MediaRecord
   assert.match(body.text, EXPECTED);
   assert.ok(Math.abs(body.durationSeconds - 11) < 0.2, `duration ${body.durationSeconds}`);
 });
+
+test("real whisper.cpp returns ordered timestamped segments when asked", async (t) => {
+  const env = await setupReal();
+  if (!env.ready) return t.skip(`missing: ${env.missing.join(", ")}. See server/README.md`);
+
+  const form = new FormData();
+  form.append("audio", new Blob([await readFixture(jfkWav)], { type: "audio/wav" }), "jfk.wav");
+  const res = await fetch(`${env.baseUrl}/api/transcribe?segments=1`, { method: "POST", body: form });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+
+  assert.ok(body.segments.length >= 1);
+  assert.equal(body.segments.map((segment) => segment.text).join(" "), body.text);
+  let previousEnd = 0;
+  for (const { start, end, text } of body.segments) {
+    assert.ok(start >= previousEnd - 0.01 && end > start && typeof text === "string", JSON.stringify({ start, end }));
+    previousEnd = end;
+  }
+  assert.ok(previousEnd <= body.durationSeconds + 0.5);
+});

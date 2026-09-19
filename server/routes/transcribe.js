@@ -39,8 +39,8 @@ export function createTranscribeRouter(config) {
       const wavPath = path.join(workDir, "audio.wav");
       const { durationSeconds } = await convertToWav(file.path, wavPath, config, remainingMs(), signal);
       if (signal.aborted) throw requestCancelled();
-      const text = await transcribeWav(wavPath, workDir, config, remainingMs(), signal);
-      return { text, durationSeconds };
+      const { text, segments } = await transcribeWav(wavPath, workDir, config, remainingMs(), signal);
+      return { text, durationSeconds, segments };
     } finally {
       release();
       if (workDir) await rm(workDir, { recursive: true, force: true });
@@ -65,7 +65,10 @@ export function createTranscribeRouter(config) {
     if (req.file) await rm(req.file.path, { force: true });
 
     if (failure) return next(failure);
-    res.json(result);
+    // `segments` (timestamps) is opt-in via ?segments=1 so the default response matches the contract exactly.
+    const { segments, ...base } = result;
+    const wantSegments = req.query.segments === "1" || req.query.segments === "true";
+    res.json(wantSegments ? { ...base, segments } : base);
   });
 
   return router;

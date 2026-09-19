@@ -3,18 +3,26 @@ import path from "node:path";
 import { fileExists, run } from "../lib/exec.js";
 import { requestCancelled, serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
 
-/** Remove whisper's non-speech markers such as [BLANK_AUDIO] or [MUSIC]. */
-function cleanTranscript(segments) {
-  return segments
-    .map((segment) => segment.text ?? "")
-    .join(" ")
+/** Remove whisper's non-speech markers such as [BLANK_AUDIO] or [MUSIC], and tidy whitespace. */
+const cleanText = (text) =>
+  (text ?? "")
     .replace(/\[[A-Z_ ]+\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+/** Whisper segments -> [{ start, end, text }] in seconds on the original timeline, empties dropped. */
+function toSegments(raw) {
+  return raw
+    .map((segment) => ({
+      start: (segment.offsets?.from ?? 0) / 1000,
+      end: (segment.offsets?.to ?? 0) / 1000,
+      text: cleanText(segment.text),
+    }))
+    .filter((segment) => segment.text);
 }
 
 /**
- * Run whisper.cpp on a 16 kHz mono WAV and return the transcript text.
+ * Run whisper.cpp on a 16 kHz mono WAV and return { text, segments }.
  * Reads whisper's structured JSON output rather than parsing terminal logs.
  * `workDir` must be a directory private to this request.
  */
@@ -54,7 +62,7 @@ export async function transcribeWav(wavPath, workDir, config, timeoutMs, signal)
     throw transcriptionFailed();
   }
 
-  const text = cleanTranscript(segments);
-  if (!text) throw transcriptionFailed("No speech was detected in the recording.", 422);
-  return text;
+  const cleaned = toSegments(segments);
+  if (cleaned.length === 0) throw transcriptionFailed("No speech was detected in the recording.", 422);
+  return { text: cleaned.map((segment) => segment.text).join(" "), segments: cleaned };
 }

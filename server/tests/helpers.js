@@ -51,7 +51,7 @@ export const readFixture = (file = jfkWav) => readFile(file);
  */
 export async function makeFakeWhisper(dir, mode) {
   const bodies = {
-    ok: `printf '{"transcription":[{"text":" Hello"},{"text":" world."}]}' > "$OUT.json"`,
+    ok: `printf '{"transcription":[{"text":" Hello","offsets":{"from":250,"to":1500}},{"text":" world.","offsets":{"from":1500,"to":3000}}]}' > "$OUT.json"`,
     blank: `printf '{"transcription":[{"text":" [BLANK_AUDIO]"}]}' > "$OUT.json"`,
     badjson: `printf 'not json' > "$OUT.json"`,
     nooutput: `exit 0`,

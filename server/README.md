@@ -66,6 +66,9 @@ curl -X POST http://localhost:3001/api/transcribe -F "audio=@recording.webm"
 # {"text":"And so my fellow Americans, ...","durationSeconds":11}
 ```
 
+Add `?segments=1` to also get timestamped segments (see the contract); the default response
+is unchanged.
+
 If anything is missing at startup the server still starts, logs what is missing, and
 `/api/health` returns `{"status":"unavailable"}` (HTTP 503).
 
@@ -177,7 +180,7 @@ server/
 
 - English only by default (`small.en`). Multilingual needs a multilingual model and `WHISPER_LANGUAGE`.
 - Transcription runs after recording stops; there is no streaming.
-- No speaker labels, timestamps, authentication, or persistence.
+- No speaker labels, authentication, or persistence. Timestamps are opt-in (`?segments=1`).
 - Durations up to 60.5 s are accepted, since recorders often overshoot 60 s slightly.
 - When `MAX_CONCURRENT` jobs are running, new requests are rejected with 503 rather than queued.
 - An unclean server kill (SIGKILL, crash) can leave files in the temp dir; they are safe to delete.
