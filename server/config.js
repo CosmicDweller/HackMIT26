@@ -12,14 +12,46 @@ function intFromEnv(env, name, fallback) {
 /** Build the runtime config from environment variables. Relative paths resolve against server/. */
 export function loadConfig(env = process.env) {
   return {
-    // Speech engine for authenticated transcriptions: "local" (default; audio never leaves this machine)
-    // or "deepgram" (opt-in cloud service). The public /api/transcribe is always local.
-    sttEngine: env.STT_ENGINE === "deepgram" ? "deepgram" : "local",
+    // Speech engine for authenticated transcriptions: "deepgram" (primary: Nova-3 Medical + batch
+    // diarization) or "local" (the previous whisper.cpp + sherpa-onnx engine, kept as an optional
+    // fallback; short recordings only). There is NO automatic fallback between them: a Deepgram failure
+    // is reported as a failure. The public /api/transcribe is always local.
+    sttEngine: env.STT_ENGINE === "local" ? "local" : "deepgram",
     deepgramApiKey: env.DEEPGRAM_API_KEY ?? "",
-    // Nova-3 Medical: tuned for clinical vocabulary. English variants only.
     deepgramModel: env.DEEPGRAM_MODEL ?? "nova-3-medical",
+    // "latest" resolves to Deepgram's batch diarizer (v2 as of 2026-09). Never combined with diarize=true.
+    deepgramDiarizeModel: env.DEEPGRAM_DIARIZE_MODEL ?? "latest",
+    deepgramLanguage: env.DEEPGRAM_LANGUAGE ?? "en",
+    // Optional Nova-3 keyterm prompting (comma separated medical terms). Empty by default.
+    deepgramKeyterms: (env.DEEPGRAM_KEYTERMS ?? "").split(",").map((term) => term.trim()).filter(Boolean),
+    // Optional, explicit, never silent: a different model to try when the primary is unavailable.
+    deepgramFallbackModel: env.DEEPGRAM_FALLBACK_MODEL ?? "",
     deepgramBaseUrl: env.DEEPGRAM_BASE_URL ?? "https://api.deepgram.com",
-    deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 60_000),
+    // Deepgram returns 504 for synchronous requests over 10 minutes; stay below that.
+    deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 9 * 60_000),
+    // Recordings longer than this need a callback (async) request; without one they are rejected up
+    // front (before any audio is sent) rather than risking a 10-minute timeout that loses the result.
+    // Default = the recording maximum: a real 2-hour recording was processed in 29 s (10 s at Deepgram).
+    // Lower it on a slow uplink: the whole upload must finish inside DEEPGRAM_TIMEOUT_MS.
+    deepgramSyncMaxSeconds: intFromEnv(env, "DEEPGRAM_SYNC_MAX_SECONDS", 7200),
+    // Public URL that Deepgram can POST results to (for long recordings). Empty = callbacks disabled.
+    deepgramCallbackBaseUrl: env.DEEPGRAM_CALLBACK_BASE_URL ?? "",
+    callbackPort: intFromEnv(env, "CALLBACK_PORT", 8443),
+    callbackDeadlineMs: intFromEnv(env, "CALLBACK_DEADLINE_MS", 6 * 60 * 60_000),
+    // Segments below these confidences are flagged needsReview (advisory only).
+    reviewWordConfidence: Number.parseFloat(env.REVIEW_WORD_CONFIDENCE ?? "") || 0.85,
+    reviewSpeakerConfidence: Number.parseFloat(env.REVIEW_SPEAKER_CONFIDENCE ?? "") || 0.6,
+    // Recordings (jobs): original uploads are file-backed under uploadDir.
+    maxRecordingSeconds: intFromEnv(env, "MAX_RECORDING_SECONDS", 7200),
+    maxRecordingBytes: intFromEnv(env, "MAX_RECORDING_BYTES", 1024 * 1024 * 1024),
+    ffprobeBin: env.FFPROBE_BIN ?? "ffprobe",
+    uploadDir: path.resolve(serverDir, env.UPLOAD_DIR ?? "data/uploads"),
+    // Failed jobs keep their audio this long so they can be retried; completed jobs delete it at once.
+    audioRetentionHours: intFromEnv(env, "AUDIO_RETENTION_HOURS", 24),
+    maxConcurrentJobs: intFromEnv(env, "MAX_CONCURRENT_JOBS", 2),
+    maxSubmitAttempts: intFromEnv(env, "MAX_SUBMIT_ATTEMPTS", 3),
+    // How long POST /api/transcriptions (the synchronous convenience route) waits before answering 202.
+    syncWaitMs: intFromEnv(env, "SYNC_WAIT_MS", 180_000),
     port: intFromEnv(env, "PORT", 3001),
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5173",
     ffmpegBin: env.FFMPEG_BIN ?? "ffmpeg",

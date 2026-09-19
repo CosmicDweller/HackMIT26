@@ -16,7 +16,8 @@
     "setup:diarization": "sh scripts/setup-diarization.sh",
     "doctor": "node --env-file-if-exists=.env scripts/doctor.js",
     "check-token": "node --env-file-if-exists=.env scripts/check-token.js",
-    "check-deepgram": "node --env-file-if-exists=.env scripts/check-deepgram.js"
+    "check-deepgram": "node --env-file-if-exists=.env scripts/check-deepgram.js",
+    "eval:deepgram": "node --env-file-if-exists=.env scripts/eval-deepgram.js"
   },
   "dependencies": {
     "express": "^5.2.1",

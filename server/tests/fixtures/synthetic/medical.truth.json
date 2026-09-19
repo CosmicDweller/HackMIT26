@@ -1,0 +1,52 @@
+{
+  "voices": {
+    "A": "Daniel",
+    "B": "Samantha",
+    "C": "Fred"
+  },
+  "durationMs": 30631,
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Good morning. How long have you had the shortness of breath?",
+      "startMs": 300,
+      "endMs": 3646
+    },
+    {
+      "speaker": "B",
+      "text": "About two weeks, and I feel dizzy when I stand up.",
+      "startMs": 4346,
+      "endMs": 7512
+    },
+    {
+      "speaker": "A",
+      "text": "Are you still taking metformin five hundred milligrams twice daily?",
+      "startMs": 8212,
+      "endMs": 11958
+    },
+    {
+      "speaker": "B",
+      "text": "Yes, and lisinopril ten milligrams once daily.",
+      "startMs": 12658,
+      "endMs": 15786
+    },
+    {
+      "speaker": "A",
+      "text": "Your hemoglobin A1c was seven point two percent. I will increase the atorvastatin to forty milligrams.",
+      "startMs": 16486,
+      "endMs": 23128
+    },
+    {
+      "speaker": "B",
+      "text": "Should I be worried about the chest pain?",
+      "startMs": 23828,
+      "endMs": 25939
+    },
+    {
+      "speaker": "A",
+      "text": "Any chest pain with exertion needs an electrocardiogram today.",
+      "startMs": 26639,
+      "endMs": 30231
+    }
+  ]
+}

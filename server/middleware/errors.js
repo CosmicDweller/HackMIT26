@@ -20,7 +20,7 @@ export function cors(allowedOrigin) {
 export function errorHandler(error, req, res, _next) {
   if (error instanceof AppError) {
     if (error.retryAfterSeconds) res.setHeader("Retry-After", String(error.retryAfterSeconds));
-    return res.status(error.status).json({ error: error.message, code: error.code });
+    return res.status(error.status).json({ error: error.message, code: error.code, ...error.extra });
   }
   // Malformed JSON or an oversized body from express.json()
   if (error?.type === "entity.parse.failed") {

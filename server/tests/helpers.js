@@ -14,7 +14,11 @@ export const jfkWav = path.join(fixtureDir, "jfk.wav");
 export async function makeConfig(overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "stt-test-"));
   const tmpDir = path.join(root, "work");
-  const config = { ...loadConfig({}), tmpDir, dbPath: path.join(root, "db", "test.sqlite"), ...overrides };
+  // Tests default to the local engine (fast, no network). Deepgram tests opt in explicitly.
+  const config = {
+    ...loadConfig({}), tmpDir, uploadDir: path.join(root, "uploads"), dbPath: path.join(root, "db", "test.sqlite"),
+    sttEngine: "local", deepgramApiKey: "", ...overrides,
+  };
   return { config, root, tmpDir, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
@@ -25,7 +29,7 @@ export async function startServer(config, overrides) {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  return { baseUrl, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { app, baseUrl, close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(resolve); }) };
 }
 
 export function postAudio(baseUrl, bytes, { filename = "recording.wav", field = "audio", type = "audio/wav" } = {}) {
@@ -131,4 +135,10 @@ export async function makeFakeDiarizer(dir, mode) {
   await writeFile(file, `#!/bin/sh\n${bodies[mode]}\n`);
   await chmod(file, 0o755);
   return file;
+}
+
+/** A tone of the given length in the given container (for length/size boundary tests). */
+export function makeTone(file, seconds, codec = ["-c:a", "pcm_s16le"]) {
+  const result = spawnSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000", "-t", String(seconds), ...codec, file], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`ffmpeg failed: ${result.stderr}`);
 }

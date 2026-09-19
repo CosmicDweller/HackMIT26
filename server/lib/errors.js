@@ -1,11 +1,12 @@
 /** Error whose message is safe to send to the client. */
 export class AppError extends Error {
-  constructor(code, status, message, { retryAfterSeconds } = {}) {
+  constructor(code, status, message, { retryAfterSeconds, extra } = {}) {
     super(message);
     this.name = "AppError";
     this.code = code;
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.extra = extra; // additional public fields for the JSON body (for example a jobId)
   }
 }
 

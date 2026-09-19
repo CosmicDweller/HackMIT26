@@ -1,8 +1,8 @@
 import { rm } from "node:fs/promises";
 import express, { Router } from "express";
-import { invalidRequest, notFound } from "../lib/errors.js";
+import { invalidAudio, invalidRequest, notFound } from "../lib/errors.js";
 import { createUploadMiddleware } from "../middleware/upload.js";
-import { alignSegments } from "../services/align.js";
+import { httpErrorForJob } from "../services/jobs.js";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_EXPECTED_SPEAKERS = 6;
@@ -12,9 +12,10 @@ const MAX_EXPECTED_SPEAKERS = 6;
  * Mounted at /api/transcriptions. Every route requires a verified session, and every store call
  * is scoped to req.user.id, which comes from the verified token and nothing else.
  */
-export function createTranscriptionsRouter(config, pipeline, store, authenticate) {
+export function createTranscriptionsRouter(config, jobs, store, authenticate) {
   const router = Router();
-  const upload = createUploadMiddleware(config);
+  // The original 10 MB upload limit of this route is kept. Uploads land in the private, file-backed upload directory.
+  const upload = createUploadMiddleware(config, { dir: config.uploadDir });
 
   router.use(authenticate);
   router.use(express.json({ limit: "64kb" }));
@@ -33,14 +34,10 @@ export function createTranscriptionsRouter(config, pipeline, store, authenticate
     }
   };
 
+  // Convenience route: creates a job like POST /api/transcription-jobs and waits for it, so short
+  // recordings keep working with a single request. Long ones answer 202 with the job to poll.
   router.post("/", upload, async (req, res, next) => {
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableFinished) controller.abort();
-    });
-
-    let resource;
-    let failure;
+    let job;
     try {
       let expectedSpeakers;
       if (req.body?.expectedSpeakers !== undefined) {
@@ -49,31 +46,29 @@ export function createTranscriptionsRouter(config, pipeline, store, authenticate
           throw invalidRequest(`expectedSpeakers must be a whole number from 1 to ${MAX_EXPECTED_SPEAKERS}.`);
         }
       }
+      if (!req.file) throw invalidAudio("No audio file was provided. Send it in the 'audio' field.");
+      if (req.file.size === 0) throw invalidAudio("The audio file is empty.");
 
-      const result = await pipeline.process(req.file, controller.signal, { diarize: true, expectedSpeakers });
-      const { speakers, segments } = alignSegments(
-        result.segments.map((segment) => ({
-          startMs: Math.round(segment.start * 1000),
-          endMs: Math.round(segment.end * 1000),
-          text: segment.text,
-        })),
-        result.diarization.intervals,
-      );
-      resource = store.createTranscription(req.user.id, {
-        durationSeconds: result.durationSeconds,
-        diarizationStatus: result.diarization.status,
-        engine: result.engine,
-        speakers,
-        segments,
-      });
+      // The job now owns the stored file (it is deleted when processing finishes).
+      job = jobs.create(req.user.id, { audioPath: req.file.path, audioBytes: req.file.size, expectedSpeakers });
+      const done = await jobs.waitFor(job.id, config.syncWaitMs);
+
+      if (done.status === "completed") {
+        const resource = store.get(req.user.id, done.transcription_id);
+        return res.status(201).location(`/api/transcriptions/${resource.id}`).json(resource);
+      }
+      if (done.status === "failed") {
+        const error = httpErrorForJob(done.error_code);
+        error.extra = { jobId: done.id };
+        throw error;
+      }
+      // Still processing: hand back the job so the client can poll it.
+      return res.status(202).location(`/api/transcription-jobs/${job.id}`).json(jobs.view(done));
     } catch (error) {
-      failure = error;
+      // A file that never became a job is deleted here; a job's file is managed by the job.
+      if (!job && req.file) await rm(req.file.path, { force: true });
+      next(error);
     }
-    // Raw audio is never kept: delete the upload before responding.
-    if (req.file) await rm(req.file.path, { force: true });
-
-    if (failure) return next(failure);
-    res.status(201).location(`/api/transcriptions/${resource.id}`).json(resource);
   });
 
   router.get("/", handle((req, res) => res.json({ transcriptions: store.list(req.user.id) })));
