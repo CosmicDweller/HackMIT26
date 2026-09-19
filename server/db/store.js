@@ -192,6 +192,7 @@ export function openStore(dbPath) {
         load(ownerId, id); // ownership check
         if (!q.speakerExists.get(id, String(speakerId))) throw invalidRequest("That speaker does not belong to this transcription.");
         q.setRole.run(role, id, String(speakerId));
+        q.setReview.run("needs_review", id, ownerId); // changed after review => review again
         return load(ownerId, id);
       });
     },
@@ -216,15 +217,21 @@ export function openStore(dbPath) {
         if (hasSpeaker) q.setSegmentSpeaker.run(changes.speakerId, id, String(segmentId));
         // Keep the full text consistent with its segments. Audio is never re-transcribed.
         q.setText.run(joinText(q.segments.all(id)), id, ownerId);
+        q.setReview.run("needs_review", id, ownerId); // changed after review => review again
         return load(ownerId, id);
       });
     },
 
-    /** Explicit review confirmation. Not exposed via HTTP until the frontend agrees on it. */
-    setReviewStatus(ownerId, id, status) {
-      load(ownerId, id);
-      q.setReview.run(status, id, ownerId);
-      return load(ownerId, id);
+    /**
+     * Explicit review confirmation (POST /api/transcriptions/:id/review). Nothing else ever sets
+     * "reviewed"; any later edit puts the transcript back to "needs_review". Idempotent.
+     */
+    markReviewed(ownerId, id) {
+      return transaction(() => {
+        load(ownerId, id); // ownership check
+        q.setReview.run("reviewed", id, ownerId);
+        return load(ownerId, id);
+      });
     },
   };
 }

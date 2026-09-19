@@ -70,6 +70,7 @@ describe("authentication", () => {
     ["GET", "/api/transcriptions"],
     ["GET", "/api/transcriptions/tr_x"],
     ["DELETE", "/api/transcriptions/tr_x"],
+    ["POST", "/api/transcriptions/tr_x/review"],
     ["PATCH", "/api/transcriptions/tr_x/speakers", { speakerId: "speaker_1", role: "doctor" }],
     ["PATCH", "/api/transcriptions/tr_x/segments/segment_1", { text: "x" }],
   ];
@@ -433,5 +434,74 @@ describe("deletion", () => {
     const drop = (await upload(token)).body;
     assert.equal((await call(token, "DELETE", `/api/transcriptions/${drop.id}`)).status, 204);
     assert.deepEqual((await call(token, "GET", `/api/transcriptions/${keep.id}`)).body, keep);
+  });
+});
+
+describe("review confirmation", () => {
+  test("is only ever set by the explicit review action, and persists", async () => {
+    const { call, upload, tokenFor } = await setup();
+    const token = await tokenFor("doctor-a");
+    const created = (await upload(token)).body;
+    assert.equal(created.reviewStatus, "needs_review");
+
+    // Doing all the other things does not review it.
+    await call(token, "PATCH", `/api/transcriptions/${created.id}/speakers`, { speakerId: "speaker_1", role: "doctor" });
+    await call(token, "PATCH", `/api/transcriptions/${created.id}/speakers`, { speakerId: "speaker_2", role: "patient" });
+    const edited = await call(token, "PATCH", `/api/transcriptions/${created.id}/segments/segment_1`, { text: "Hi" });
+    assert.equal(edited.body.reviewStatus, "needs_review");
+
+    const reviewed = await call(token, "POST", `/api/transcriptions/${created.id}/review`);
+    assert.equal(reviewed.status, 200);
+    assert.equal(reviewed.body.reviewStatus, "reviewed");
+    assert.deepEqual({ ...reviewed.body, reviewStatus: "x" }, { ...edited.body, reviewStatus: "x" }, "only the status changes");
+    assert.equal((await call(token, "GET", `/api/transcriptions/${created.id}`)).body.reviewStatus, "reviewed");
+    assert.equal((await call(token, "GET", "/api/transcriptions")).body.transcriptions[0].reviewStatus, "reviewed");
+  });
+
+  test("is idempotent", async () => {
+    const { call, upload, tokenFor } = await setup();
+    const token = await tokenFor("doctor-a");
+    const { id } = (await upload(token)).body;
+    await call(token, "POST", `/api/transcriptions/${id}/review`);
+    assert.equal((await call(token, "POST", `/api/transcriptions/${id}/review`)).body.reviewStatus, "reviewed");
+  });
+
+  test("editing text, changing a segment's speaker or assigning a role after review requires review again", async () => {
+    const { call, upload, tokenFor } = await setup();
+    const token = await tokenFor("doctor-a");
+    const { id } = (await upload(token)).body;
+    const review = () => call(token, "POST", `/api/transcriptions/${id}/review`);
+
+    await review();
+    assert.equal((await call(token, "PATCH", `/api/transcriptions/${id}/segments/segment_1`, { text: "Changed" })).body.reviewStatus, "needs_review");
+    await review();
+    assert.equal((await call(token, "PATCH", `/api/transcriptions/${id}/segments/segment_1`, { speakerId: "speaker_2" })).body.reviewStatus, "needs_review");
+    await review();
+    assert.equal((await call(token, "PATCH", `/api/transcriptions/${id}/speakers`, { speakerId: "speaker_1", role: "other" })).body.reviewStatus, "needs_review");
+  });
+
+  test("a rejected edit does not disturb an existing review", async () => {
+    const { call, upload, tokenFor } = await setup();
+    const token = await tokenFor("doctor-a");
+    const { id } = (await upload(token)).body;
+    await call(token, "POST", `/api/transcriptions/${id}/review`);
+    expectError(await call(token, "PATCH", `/api/transcriptions/${id}/segments/segment_1`, { text: "" }), 400, "INVALID_REQUEST");
+    assert.equal((await call(token, "GET", `/api/transcriptions/${id}`)).body.reviewStatus, "reviewed");
+  });
+
+  test("doctor B cannot review doctor A's transcript", async () => {
+    const { call, upload, tokenFor } = await setup();
+    const tokenA = await tokenFor("doctor-a");
+    const tokenB = await tokenFor("doctor-b");
+    const { id } = (await upload(tokenA)).body;
+    expectError(await call(tokenB, "POST", `/api/transcriptions/${id}/review`), 404, "NOT_FOUND");
+    assert.equal((await call(tokenA, "GET", `/api/transcriptions/${id}`)).body.reviewStatus, "needs_review");
+  });
+
+  test("an unknown or malformed id is not found", async () => {
+    const { call, tokenFor } = await setup();
+    const token = await tokenFor("doctor-a");
+    expectError(await call(token, "POST", "/api/transcriptions/tr_00000000-0000-0000-0000-000000000000/review"), 404, "NOT_FOUND");
+    expectError(await call(token, "POST", "/api/transcriptions/..%2Fx/review"), 404, "NOT_FOUND");
   });
 });

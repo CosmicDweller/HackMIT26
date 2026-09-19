@@ -211,7 +211,7 @@ Speaker ids do not carry over between recordings.
 | --- | --- |
 | `text` | The segments' text joined with a space, kept consistent when a segment is edited. |
 | `durationSeconds` | Length of the submitted audio. |
-| `reviewStatus` | `needs_review` (default) or `reviewed`. Only an explicit review action can change it (see below). Editing text, changing a speaker or assigning a role never changes it. |
+| `reviewStatus` | `needs_review` (default) or `reviewed`. Only `POST .../review` sets `reviewed`; any later edit, speaker change or role change sets it back to `needs_review`. |
 | `engine` | Which speech engine produced the transcript: `local` (default; audio never left the backend machine) or `deepgram` (opt-in cloud engine, see Privacy). Lets the UI and audits tell where audio went. |
 | `diarization.status` | `ok`, `failed` (speaker detection ran and errored or timed out) or `unavailable` (not installed or disabled). |
 | `diarization.speakerCount` | Number of speakers that own at least one segment. |
@@ -287,11 +287,13 @@ any error nothing changes. Returns the full **Transcription** (with `text` recom
 `204 No Content` with an empty body. Removes the transcription with its speakers and segments (no audio exists to
 remove). `404 NOT_FOUND` for a missing or foreign transcription. Deleting twice returns `404`.
 
-### Review confirmation: NOT implemented (needs frontend agreement)
+### POST /api/transcriptions/:id/review
 
-Nothing in v2 marks a transcript as reviewed. If wanted, the proposal is `POST /api/transcriptions/:id/review` with
-no body, an explicit action that returns the full **Transcription** with `reviewStatus: "reviewed"`. It would never
-be triggered by saving labels or edits. The storage column and status values already exist.
+Explicit review confirmation: no request body. Sets `reviewStatus` to `reviewed` and returns the full
+**Transcription** (`200`; idempotent). This is the **only** thing that ever sets `reviewed`: saving a role, a speaker
+or an edit never does. Any later change to segment text, a segment's speaker or a speaker's role sets the transcript
+back to `needs_review`, so "reviewed" never describes content that has since changed. A rejected edit changes
+nothing, including an existing review. `404 NOT_FOUND` for a missing or foreign transcription.
 
 ## Errors (additions)
 

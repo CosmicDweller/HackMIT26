@@ -85,6 +85,11 @@ export function createTranscriptionsRouter(config, pipeline, store, authenticate
     res.status(204).end();
   }));
 
+  // Deliberate, explicit action (no body). Saving labels or edits never marks a transcript reviewed.
+  router.post("/:id/review", handle((req, res) => {
+    res.json(store.markReviewed(req.user.id, requireId(req.params.id)));
+  }));
+
   router.patch("/:id/speakers", handle((req, res) => {
     const id = requireId(req.params.id);
     if (!isObject(req.body) || typeof req.body.speakerId !== "string" || typeof req.body.role !== "string") {
