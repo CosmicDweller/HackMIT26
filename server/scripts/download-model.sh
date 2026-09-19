@@ -1,20 +1,26 @@
 #!/bin/sh
-# Downloads a whisper.cpp model into server/models/ (git-ignored).
-# Usage: sh scripts/download-model.sh [model-name]   (default: base.en)
+# Downloads the whisper.cpp model and the Silero VAD model into server/models/ (git-ignored).
+# Usage: sh scripts/download-model.sh [model-name]   (default: small.en)
 set -eu
 
-MODEL="${1:-base.en}"
+MODEL="${1:-small.en}"
 DEST_DIR="$(cd "$(dirname "$0")/.." && pwd)/models"
-DEST="$DEST_DIR/ggml-$MODEL.bin"
-URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
-
 mkdir -p "$DEST_DIR"
-if [ -s "$DEST" ]; then
-  echo "Model already present: $DEST"
-  exit 0
-fi
 
-echo "Downloading $MODEL from $URL"
-curl -L --fail --progress-bar -o "$DEST.part" "$URL"
-mv "$DEST.part" "$DEST"
-echo "Saved $DEST"
+download() {
+  name="$1"
+  url="$2"
+  dest="$DEST_DIR/$name"
+  if [ -s "$dest" ]; then
+    echo "Already present: $dest"
+    return
+  fi
+  echo "Downloading $name from $url"
+  curl -L --fail --progress-bar -o "$dest.part" "$url"
+  mv "$dest.part" "$dest"
+  echo "Saved $dest"
+}
+
+download "ggml-$MODEL.bin" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
+# Voice activity detection: prevents phantom text such as "you" on silent recordings.
+download "ggml-silero-v5.1.2.bin" "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"

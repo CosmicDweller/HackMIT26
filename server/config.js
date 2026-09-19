@@ -16,7 +16,13 @@ export function loadConfig(env = process.env) {
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5173",
     ffmpegBin: env.FFMPEG_BIN ?? "ffmpeg",
     whisperBin: env.WHISPER_BIN ?? "whisper-cli",
-    whisperModel: path.resolve(serverDir, env.WHISPER_MODEL ?? "models/ggml-base.en.bin"),
+    whisperModel: path.resolve(serverDir, env.WHISPER_MODEL ?? "models/ggml-small.en.bin"),
+    // Voice activity detection stops whisper hallucinating text ("you", "Thank you.") on silence.
+    // Enabled when the model file exists; set WHISPER_VAD_MODEL= (empty) to disable.
+    whisperVadModel:
+      env.WHISPER_VAD_MODEL === ""
+        ? null
+        : path.resolve(serverDir, env.WHISPER_VAD_MODEL ?? "models/ggml-silero-v5.1.2.bin"),
     whisperLanguage: env.WHISPER_LANGUAGE ?? "en",
     whisperThreads: intFromEnv(env, "WHISPER_THREADS", 4),
     maxUploadBytes: intFromEnv(env, "MAX_UPLOAD_BYTES", 10 * 1024 * 1024),

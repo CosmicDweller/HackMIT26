@@ -13,7 +13,7 @@ browser recording ─▶ POST /api/transcribe ─▶ FFmpeg (16 kHz mono WAV) �
 - Node.js 22.9 or newer (developed on 24)
 - FFmpeg
 - whisper.cpp (`whisper-cli`)
-- A whisper.cpp model file (`base.en`, about 148 MB)
+- A whisper.cpp model file (`small.en`, about 488 MB)
 
 ## Setup
 
@@ -34,11 +34,12 @@ Then, from the repository root:
 ```bash
 cd server
 npm install
-npm run setup:model      # downloads models/ggml-base.en.bin (git-ignored)
+npm run setup:model      # downloads models/ggml-small.en.bin + the VAD model (git-ignored)
 ```
 
-`setup:model` accepts another model name: `sh scripts/download-model.sh small.en`
-(then set `WHISPER_MODEL=models/ggml-small.en.bin`). Model files are never committed.
+`setup:model` accepts another model name: `sh scripts/download-model.sh base.en`
+(then set `WHISPER_MODEL=models/ggml-base.en.bin`). `base.en` (148 MB) is faster and
+lighter but less accurate on accents, noise and medical terms. Model files are never committed.
 
 ## Run
 
@@ -68,7 +69,8 @@ Copy `.env.example` to `.env` to override any of these. All are optional.
 | `CORS_ORIGIN`          | `http://localhost:5173`     | Browser origin allowed to call the API (`*` for any) |
 | `FFMPEG_BIN`           | `ffmpeg`                    | FFmpeg executable (name on PATH or absolute path)    |
 | `WHISPER_BIN`          | `whisper-cli`               | whisper.cpp executable                               |
-| `WHISPER_MODEL`        | `models/ggml-base.en.bin`   | Model file, relative to `server/`                    |
+| `WHISPER_MODEL`        | `models/ggml-small.en.bin`   | Model file, relative to `server/`                    |
+| `WHISPER_VAD_MODEL`    | `models/ggml-silero-v5.1.2.bin` | Voice activity detection model (empty value disables) |
 | `WHISPER_LANGUAGE`     | `en`                        | Language code (`auto` needs a multilingual model)    |
 | `WHISPER_THREADS`      | `4`                         | CPU threads for whisper                              |
 | `MAX_UPLOAD_BYTES`     | `10485760`                  | Upload size limit (10 MB)                            |
@@ -76,6 +78,24 @@ Copy `.env.example` to `.env` to override any of these. All are optional.
 | `PROCESS_TIMEOUT_MS`   | `120000`                    | Total conversion + inference budget per request      |
 | `MAX_CONCURRENT`       | `2`                         | Simultaneous transcriptions; extra requests get 503  |
 | `STT_TMP_DIR`          | OS temp dir + `/stt-server` | Where temporary audio lives                          |
+
+## Demo hosting: laptop + tunnel
+
+The deployed frontend (Vercel) cannot run whisper.cpp or FFmpeg, so the demo runs this
+server on a laptop and exposes it through an HTTPS tunnel:
+
+1. Start the server: `npm start`.
+2. Start a tunnel to port 3001 with a tool of your choice, for example
+   `cloudflared tunnel --url http://localhost:3001` or `ngrok http 3001`.
+3. Set `CORS_ORIGIN` in `.env` to the deployed frontend's origin (for example
+   `https://your-app.vercel.app`) and restart. Point the frontend's API base URL at the
+   tunnel URL. A browser blocks an `https` page from calling plain `http`, so use the
+   tunnel's `https` URL.
+4. Keep the laptop awake and plugged in. Warm the model with one request before the demo
+   (the first run after boot is slower).
+
+Tunnel URLs are public. There is no authentication in the MVP, so share the URL only
+for the demo and stop the tunnel afterwards.
 
 ## Tests
 
@@ -86,10 +106,19 @@ npm test
 - `tests/api.test.js`: validation, limits, error codes, timeouts, concurrency, cleanup.
   Several of these swap whisper for a small fake shell script to exercise subprocess
   failures deterministically. **Those tests do not prove speech recognition works.**
-- `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `base.en` model on
-  `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV and
-  as WebM/Opus, and asserts the actual transcript. These are reported as skipped if
+- `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
+  `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,
+  WebM/Opus and header-less streamed WebM (what browsers record), asserts the actual
+  transcript, and checks that silence and quiet noise report no speech. These are reported as skipped if
   FFmpeg, whisper.cpp or the model is missing.
+
+## Silence handling
+
+Whisper alone invents text ("you", "Thank you.") for silent or noisy-but-empty audio.
+The server enables whisper.cpp's built-in Silero voice activity detection (`--vad`,
+a 0.9 MB model downloaded by `setup:model`), so those recordings return
+`TRANSCRIPTION_FAILED` (422, "No speech was detected in the recording."). Without the VAD
+model file the server still works but logs a warning at startup and may hallucinate on silence.
 
 ## Inference command (verified)
 
@@ -97,12 +126,13 @@ The server runs the equivalent of this, after converting the upload to 16 kHz mo
 
 ```bash
 ffmpeg -i upload -vn -t 61 -ac 1 -ar 16000 -c:a pcm_s16le -f wav audio.wav
-whisper-cli -m models/ggml-base.en.bin -f audio.wav -l en -t 4 -sns -np -oj -of result
+whisper-cli -m models/ggml-small.en.bin -f audio.wav -l en -t 4 -sns -np --vad -vm models/ggml-silero-v5.1.2.bin -oj -of result
 # result.json -> transcription[].text
 ```
 
-Measured on an Apple M4 Pro (Metal GPU, `base.en`): an 11 s clip transcribes in about
-0.3 s, and a 55 s WebM/Opus upload completes end to end in about 0.6-0.7 s. The very
+Measured on an Apple M4 Pro (Metal GPU): with `small.en`, an 11 s clip transcribes in
+about 0.45 s and a 55 s clip in about 1.4 s (whisper only). `base.en` is about 2-3x
+faster (55 s WebM/Opus upload end to end in 0.6-0.7 s). The very
 first whisper run after install can take about 15 s while Metal shaders compile; later
 runs are fast. CPU-only machines will be slower; use a smaller model or raise
 `PROCESS_TIMEOUT_MS` if needed.
@@ -134,7 +164,7 @@ server/
 
 ## Known limitations
 
-- English only by default (`base.en`). Multilingual needs a multilingual model and `WHISPER_LANGUAGE`.
+- English only by default (`small.en`). Multilingual needs a multilingual model and `WHISPER_LANGUAGE`.
 - Transcription runs after recording stops; there is no streaming.
 - No speaker labels, timestamps, authentication, or persistence.
 - Durations up to 60.5 s are accepted, since recorders often overshoot 60 s slightly.

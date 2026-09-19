@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { run } from "../lib/exec.js";
+import { fileExists, run } from "../lib/exec.js";
 import { serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
 
 /** Remove whisper's non-speech markers such as [BLANK_AUDIO] or [MUSIC]. */
@@ -30,6 +30,9 @@ export async function transcribeWav(wavPath, workDir, config, timeoutMs) {
     "-oj",
     "-of", outputPrefix,
   ];
+  if (config.whisperVadModel && (await fileExists(config.whisperVadModel))) {
+    args.push("--vad", "-vm", config.whisperVadModel);
+  }
 
   try {
     await run(config.whisperBin, args, { timeoutMs });

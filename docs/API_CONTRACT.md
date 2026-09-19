@@ -7,8 +7,8 @@ GitHub issue #3 before either side implements them.
 Status: **v1**. The parts marked _(proposed)_ fill gaps in the agreed API and need
 frontend confirmation on issue #3. Everything else is the agreed contract.
 
-> The root `API_contract.md` (text-to-speech, `POST /api/tts`) is superseded by this
-> document. This project does speech recognition, not speech synthesis.
+> This replaces the earlier placeholder text-to-speech contract (`POST /api/tts`), which
+> has been removed. This project does speech recognition, not speech synthesis.
 
 Base URL (dev): `http://localhost:3001`. The server listens on port `3001` by default.
 
@@ -100,7 +100,7 @@ dev-server proxy for `/api` to `http://localhost:3001`, which needs no CORS.
 - No authentication and no persistent storage.
 - Temporary audio is deleted after each request, on success or failure.
 - No continuous streaming transcription.
-- English only initially (`base.en` model).
+- English only initially (`small.en` model).
 
 ## Example
 
