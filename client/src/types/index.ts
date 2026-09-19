@@ -25,7 +25,9 @@ export type ApiErrorCode =
   | "INVALID_AUDIO"
   | "FILE_TOO_LARGE"
   | "TRANSCRIPTION_FAILED"
-  | "SERVICE_UNAVAILABLE";
+  | "SERVICE_UNAVAILABLE"
+  | "UNAUTHORIZED"
+  | "NOT_FOUND";
 
 /** Client-only error codes for failures that never reach the API. */
 export type ClientErrorCode = "NETWORK_ERROR" | "UNSUPPORTED_FILE";
@@ -36,3 +38,6 @@ export interface TranscribeError {
   error: string;
   code: ErrorCode;
 }
+
+export * from "@/types/auth";
+export * from "@/types/transcription";

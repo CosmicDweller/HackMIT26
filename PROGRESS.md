@@ -1,64 +1,88 @@
 # Progress
 
 ## Current milestone
-Frontend (`client/`) functionally complete against a mock backend. Waiting on
-the real Express/whisper.cpp backend (branch `lz`) to connect to.
+`client/` extended into a doctor-accounts + speaker-diarization workspace,
+built and fully demoable against in-memory mocks. Waiting on the backend
+agent to build the proposed `/api/transcriptions*` endpoints and confirm the
+auth provider (both proposed on issue #3).
 
 ## Completed features
-- `client/`: Vite + React + TypeScript + Tailwind v4 + shadcn/ui.
-- Full speech-to-text user journey, working end-to-end against an in-browser
-  mock: record (real mic capture via MediaRecorder, 60s cap, MIME
-  auto-detected via `isTypeSupported`) or upload (drag-drop + picker, 10MB
-  limit, type validation) → audio preview → transcribe → editable transcript
-  with copy / download-as-.txt / new-transcription.
-- All required app states implemented: idle, recording, audio-ready,
-  transcribing, success, error — including mic-permission-denied, unsupported
-  file, oversized file, network failure, and duplicate-submission guarding,
-  each with a clear message and a retry path.
-- `services/transcribeApi.ts` implements the real contract (`POST
-  /api/transcribe`, `GET /api/health`); `services/mockTranscribeApi.ts` is an
-  isolated, clearly-labeled mock (output is always prefixed
-  `[MOCK TRANSCRIPT — backend not connected]`) used while `VITE_USE_MOCK_API`
-  is unset/true. Switch to the real backend by setting
-  `VITE_USE_MOCK_API=false` in `client/.env.local` (see `client/.env.example`).
-- Vite dev server proxies `/api/*` to `http://localhost:3001`.
-- Verified in Chrome: full upload → transcribe → copy journey works, no
-  console errors, production build (`tsc -b && vite build`) and lint
-  (`oxlint`) both pass.
-
-## Note: product direction changed
-This branch previously scaffolded a different product (a doctor/patient
-SOAP-note app per the original CLAUDE.md). That work was replaced —
-`frontend/` was migrated and rebuilt into `client/` as a speech-to-text app
-per updated direction from the user. Root `CLAUDE.md` still describes the old
-SOAP-note product and has not been updated; flagging this so it doesn't
-mislead the backend agent or a future session.
+- Original single-speaker quick-transcribe flow (`/`) preserved unchanged —
+  record/upload → transcribe → edit/copy/download, still against
+  `POST /api/transcribe` (real or mock via `VITE_USE_MOCK_API`).
+- New doctor workspace, added alongside it:
+  - Auth: sign up, sign in, password reset request, sign out, loading state,
+    protected routes (redirect to `/login`, return to original destination
+    after sign-in). Provider-agnostic (`services/auth/authProvider.ts`)
+    behind a mock (`VITE_USE_MOCK_AUTH`) — in-memory only, session does not
+    survive a page reload (documented limitation of the mock, not the real
+    provider). Supabase Auth proposed on issue #3 as the real provider.
+  - Dashboard shell: sidebar (Dashboard / New transcription / Transcript
+    history / Account / Sign out), responsive (collapses to a top bar on
+    mobile).
+  - New transcription: reuses the existing record/upload components against
+    a new `transcriptions` service; recording-consent reminder shown before
+    every capture.
+  - Speaker-separated transcript viewer: colored per-speaker labels,
+    timestamps, "Who's who?" mapping (Doctor/Patient/Other/Unassigned per
+    speaker, updates every segment for that speaker), per-segment speaker
+    reassignment, inline segment text editing (autosave on blur + explicit
+    Save, saving/saved indicators, `beforeunload` guard while a segment is
+    dirty), review-status badge, unreviewed-content warning.
+  - Transcript history: list with date/duration/review status, open, delete
+    with confirmation.
+  - Export as `.txt` in the `Doctor [mm:ss]` / text format from the spec;
+    warns (via confirm) before exporting an unreviewed transcript.
+  - `services/transcriptions/`: real client matching the endpoints proposed
+    on issue #3, and an isolated mock (`VITE_USE_MOCK_TRANSCRIPTIONS`) that
+    always returns the same clearly-labeled synthetic consultation fixture —
+    never analyzes real audio content, so it can't be mistaken for a real
+    diarization result.
+- Fixed on backend agent's request: `ErrorBanner` now shows the server's
+  actual message prominently instead of a generic line burying it.
+- Verified in Chrome end-to-end: sign up → dashboard → new transcription
+  (upload) → speaker mapping → segment edit (autosave) → review status
+  flips to Reviewed → history list → sign out → protected-route redirect →
+  password-reset page. No console errors. Lint and production build both
+  pass.
 
 ## Remaining prioritized tasks
-1. Backend agent to confirm `POST /api/transcribe` / `GET /api/health` match
-   what's implemented here (error codes: INVALID_AUDIO, FILE_TOO_LARGE,
-   TRANSCRIPTION_FAILED, SERVICE_UNAVAILABLE).
-2. Once backend is up on port 3001, set `VITE_USE_MOCK_API=false` and verify
-   the real journey end-to-end.
-3. Mobile-width layout not manually verified yet.
+1. Backend agent to confirm/build `/api/transcriptions*` (create, list, get,
+   delete, PATCH speakers, PATCH segments) and the Supabase Auth proposal —
+   posted on issue #3, awaiting reply.
+2. Once confirmed: wire `services/auth` to real Supabase, set
+   `VITE_USE_MOCK_AUTH=false` and `VITE_USE_MOCK_TRANSCRIPTIONS=false`,
+   verify against the real backend.
+3. Mobile-width layout not manually verified (same known limitation as
+   before — browser automation here can't reliably resize the viewport).
 4. Deploy to Vercel.
 
 ## Architectural decisions
-- `client/` owned by the frontend agent (this branch, `kv`); backend owned by
-  the agent on branch `lz`. Coordinating via GitHub issue #3.
-- Frontend built independently against a mock so it doesn't block on the
-  backend; mock is isolated behind one flag/module for an easy swap.
+- `client/` owned by the frontend agent (branch `kv`); backend owned by the
+  agent on branch `lz`. Coordinating via issue #3.
+- Original quick-transcribe flow kept as-is at `/`, not merged into the new
+  authenticated flow, per "preserve existing functionality" — the new
+  dashboard flow is additive, not a replacement.
+- Auth and the new transcriptions API each sit behind their own
+  provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
+  `VITE_USE_MOCK_TRANSCRIPTIONS`), same pattern as the existing
+  `VITE_USE_MOCK_API`, so real backends swap in without UI changes.
 
 ## Known bugs and blockers
-- None currently blocking. Backend not yet available to integrate against.
+- Mock auth session is in-memory only (resets on page reload) — acceptable
+  for the mock, but real Supabase will persist sessions properly.
+- Not a blocker, but noted: the real `/api/transcriptions*` endpoints don't
+  exist on the backend yet, so this whole feature runs on mocks until issue
+  #3 is resolved.
 
 ## Test and deployment status
-- No automated tests. Manually verified in Chrome (upload → mock transcribe →
-  copy, no console errors). Lint and build both pass. No deployment yet.
+- No automated tests. Manually verified in Chrome per the flow above. Lint
+  (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Coordinate with the backend agent on issue #3 to confirm the API contract,
-then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
+Wait for the backend agent's reply on issue #3 (auth provider +
+`/api/transcriptions*` contract), then wire the real implementations behind
+the existing mock flags.
 
 ## Backend status (lz, speech-to-text)
 - `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`
