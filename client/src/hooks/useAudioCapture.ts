@@ -35,7 +35,9 @@ export function useAudioCapture() {
     recorder.reset();
   }, [recorder]);
 
-  const isRecording = recorder.status === "recording";
+  // Treated as "an active recording session" for gating the mode toggle / app state —
+  // includes paused, since the mic session is still open and hasn't produced audio yet.
+  const isRecording = recorder.status === "recording" || recorder.status === "paused";
 
   return { mode, setMode, audio, recorder, handleAudioReady, discardAudio, isRecording };
 }

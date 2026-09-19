@@ -1,5 +1,6 @@
-import { Mic, RotateCcw, Square, Trash2 } from "lucide-react";
+import { Mic, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { LiveWaveform } from "@/components/LiveWaveform";
 import { Button } from "@/components/ui/button";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { formatClock } from "@/lib/format";
@@ -42,6 +43,8 @@ export function VoiceSampleRecorder({ index, phrase, blob, onRecorded, onClear }
   }
 
   const isRecording = recorder.status === "recording";
+  const isPaused = recorder.status === "paused";
+  const isActive = isRecording || isPaused;
   const tooShort = recorder.status === "stopped" && recorder.elapsedSeconds < TARGET_MIN_SECONDS;
 
   return (
@@ -56,22 +59,36 @@ export function VoiceSampleRecorder({ index, phrase, blob, onRecorded, onClear }
 
       {!blob ? (
         <div className="flex flex-col items-center gap-3 py-2">
-          <button
-            type="button"
-            onClick={isRecording ? recorder.stop : recorder.start}
-            disabled={recorder.status === "requesting"}
-            className={cn(
-              "flex size-14 items-center justify-center rounded-full border transition-all",
-              isRecording
-                ? "border-destructive bg-destructive/10 text-destructive"
-                : "border-border bg-card text-foreground hover:border-foreground/30",
+          {isActive && <LiveWaveform stream={recorder.stream} className="max-w-xs" />}
+          <div className="flex items-center gap-2">
+            {isActive && (
+              <button
+                type="button"
+                onClick={isPaused ? recorder.resume : recorder.pause}
+                className="flex size-10 items-center justify-center rounded-full border border-border bg-card text-foreground transition-all hover:border-foreground/30"
+                aria-label={isPaused ? "Resume recording" : "Pause recording"}
+              >
+                {isPaused ? <Play className="size-4" /> : <Pause className="size-4" />}
+              </button>
             )}
-            aria-label={isRecording ? "Stop recording" : "Start recording this sample"}
-          >
-            {isRecording ? <Square className="size-5 fill-current" /> : <Mic className="size-6" />}
-          </button>
+            <button
+              type="button"
+              onClick={isActive ? recorder.stop : recorder.start}
+              disabled={recorder.status === "requesting"}
+              className={cn(
+                "flex size-14 items-center justify-center rounded-full border transition-all",
+                isActive
+                  ? "border-destructive bg-destructive/10 text-destructive"
+                  : "border-border bg-card text-foreground hover:border-foreground/30",
+              )}
+              aria-label={isActive ? "Stop recording" : "Start recording this sample"}
+            >
+              {isActive ? <Square className="size-5 fill-current" /> : <Mic className="size-6" />}
+            </button>
+          </div>
           <p className="font-mono text-sm tabular-nums text-muted-foreground">
             {formatClock(recorder.elapsedSeconds)} / {formatClock(TARGET_MAX_SECONDS)}
+            {isPaused && " · Paused"}
           </p>
           {recorder.permissionDenied && (
             <p className="max-w-xs text-center text-xs text-destructive">

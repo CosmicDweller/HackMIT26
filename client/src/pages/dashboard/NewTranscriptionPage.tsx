@@ -131,11 +131,14 @@ export function NewTranscriptionPage() {
                 <RecordPanel
                   status={recorder.status}
                   elapsedSeconds={recorder.elapsedSeconds}
+                  stream={recorder.stream}
                   permissionDenied={recorder.permissionDenied}
                   interrupted={recorder.interrupted}
                   error={recorder.error}
                   onStart={recorder.start}
                   onStop={recorder.stop}
+                  onPause={recorder.pause}
+                  onResume={recorder.resume}
                 />
               ) : (
                 <UploadPanel onSelected={handleAudioReady} maxFileBytes={MAX_JOB_UPLOAD_BYTES} />

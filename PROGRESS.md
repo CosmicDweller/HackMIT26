@@ -1,10 +1,43 @@
 # Progress
 
 ## Current milestone
-**Doctor voice enrollment + voice-assisted speaker ID, built client-side
-against a mock, coordination proposal posted on issue #3.** No backend
-support exists yet for this — unlike the Deepgram migration, this time the
-client is ahead and waiting on the backend agent.
+**Recording pause/resume + a live audio-level graph, added to both the
+consultation recorder and voice-profile sample recorder.** Pure client-side
+UX improvement, no backend or contract changes involved.
+
+## Recording pause/resume + live waveform
+- `useAudioRecorder` gained a `"paused"` status plus `pause()`/`resume()`
+  (native `MediaRecorder.pause()/.resume()` — paused audio is excluded from
+  the final blob automatically). The elapsed-time clock now correctly
+  freezes while paused (`accumulatedMsRef` + `segmentStartRef` track time
+  across pause/resume boundaries) and the 2-hour auto-stop only fires while
+  actually recording.
+- New `components/LiveWaveform.tsx`: a canvas bar graph driven by a Web
+  Audio `AnalyserNode` reading the same `MediaStream` `getUserMedia` already
+  returned (`useAudioRecorder` now exposes `stream`) — no extra mic access,
+  theme-aware (`currentColor`), responsive via `ResizeObserver`. Reacts to
+  live mic input whether recording or paused (the mic stream stays open
+  either way); shows a flat idle line when there's no stream.
+- Wired into both `RecordPanel` (consultation recording — pause/stop as two
+  separate buttons once active) and `VoiceSampleRecorder` (voice-profile
+  enrollment samples), which were the two places `useAudioRecorder` is used.
+- **Verified:** TypeScript/lint/build clean. The idle-state UI renders
+  correctly with no console errors. The exact Web Audio call sequence
+  `LiveWaveform` uses (`createMediaStreamSource` → `AnalyserNode` →
+  `getByteFrequencyData`) was confirmed live in this browser against a
+  synthetic 440 Hz tone (peak amplitude 255, 10 non-zero bins) — proves the
+  pipeline reacts correctly to real audio. **Not verified end-to-end**:
+  actually starting a live recording through the UI — the browser's native
+  microphone-permission prompt has no clickable surface for automation
+  (same limitation as the voice-enrollment work), so the pause/resume timer
+  math and waveform were verified by code review + the isolated checks
+  above, not a full live-mic run. Please try pause/resume yourself in a
+  real browser session (mic permission grants normally on first click).
+
+## Previous milestone — doctor voice enrollment + voice-assisted speaker ID
+Built client-side against a mock, coordination proposal posted on issue #3.
+No backend support exists yet for this — unlike the Deepgram migration,
+this time the client is ahead and waiting on the backend agent.
 
 ## Voice enrollment — client built, mock-only, awaiting backend
 Proposed contract posted to issue #3 (`GET/POST/DELETE /api/me/voice-profile*`,

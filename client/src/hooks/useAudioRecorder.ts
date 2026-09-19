@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type RecorderStatus = "idle" | "requesting" | "recording" | "stopped";
+export type RecorderStatus = "idle" | "requesting" | "recording" | "paused" | "stopped";
 
 /** 2 hours — consultations can run long. Backend limits may still be lower; see docs/API_CONTRACT.md. */
 export const MAX_RECORDING_SECONDS = 7200;
@@ -33,12 +33,17 @@ export function useAudioRecorder() {
   const [error, setError] = useState<string | null>(null);
   /** Set when the mic/track was lost mid-recording (device unplugged, OS revoked permission, etc). */
   const [interrupted, setInterrupted] = useState(false);
+  /** The live mic stream while recording or paused — exposed for a live audio-level display. */
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedAtRef = useRef(0);
+  /** Elapsed ms accumulated across previous recording segments (before the current pause/resume). */
+  const accumulatedMsRef = useRef(0);
+  /** When the current (un-paused) recording segment started. */
+  const segmentStartRef = useRef(0);
   const mimeTypeRef = useRef<string>("audio/webm");
 
   const cleanupStream = useCallback(() => {
@@ -47,6 +52,7 @@ export function useAudioRecorder() {
       track.stop();
     });
     streamRef.current = null;
+    setStream(null);
   }, []);
 
   const clearTimer = useCallback(() => {
@@ -63,6 +69,35 @@ export function useAudioRecorder() {
     }
   }, [clearTimer]);
 
+  const startTimer = useCallback(() => {
+    clearTimer();
+    timerRef.current = setInterval(() => {
+      const seconds = Math.floor(
+        (accumulatedMsRef.current + (Date.now() - segmentStartRef.current)) / 1000,
+      );
+      setElapsedSeconds(seconds);
+      if (seconds >= MAX_RECORDING_SECONDS) {
+        stop();
+      }
+    }, 250);
+  }, [clearTimer, stop]);
+
+  const pause = useCallback(() => {
+    if (mediaRecorderRef.current?.state !== "recording") return;
+    mediaRecorderRef.current.pause();
+    clearTimer();
+    accumulatedMsRef.current += Date.now() - segmentStartRef.current;
+    setStatus("paused");
+  }, [clearTimer]);
+
+  const resume = useCallback(() => {
+    if (mediaRecorderRef.current?.state !== "paused") return;
+    mediaRecorderRef.current.resume();
+    segmentStartRef.current = Date.now();
+    startTimer();
+    setStatus("recording");
+  }, [startTimer]);
+
   const start = useCallback(async () => {
     setError(null);
     setPermissionDenied(false);
@@ -72,19 +107,20 @@ export function useAudioRecorder() {
     setStatus("requesting");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = mediaStream;
+      setStream(mediaStream);
 
       const mimeType = pickSupportedMimeType();
       mimeTypeRef.current = mimeType ?? "audio/webm";
       const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
+        ? new MediaRecorder(mediaStream, { mimeType })
+        : new MediaRecorder(mediaStream);
       mediaRecorderRef.current = recorder;
 
       // Device unplugged, OS revoked the mic, or the browser killed the track — stop
       // gracefully so whatever was already captured (via ondataavailable) is preserved.
-      stream.getAudioTracks().forEach((track) => {
+      mediaStream.getAudioTracks().forEach((track) => {
         track.onended = () => {
           setInterrupted(true);
           stop();
@@ -104,15 +140,10 @@ export function useAudioRecorder() {
       };
 
       recorder.start();
-      startedAtRef.current = Date.now();
+      accumulatedMsRef.current = 0;
+      segmentStartRef.current = Date.now();
       setElapsedSeconds(0);
-      timerRef.current = setInterval(() => {
-        const seconds = Math.floor((Date.now() - startedAtRef.current) / 1000);
-        setElapsedSeconds(seconds);
-        if (seconds >= MAX_RECORDING_SECONDS) {
-          stop();
-        }
-      }, 250);
+      startTimer();
 
       setStatus("recording");
     } catch (err) {
@@ -126,7 +157,7 @@ export function useAudioRecorder() {
       }
       setStatus("idle");
     }
-  }, [cleanupStream, stop]);
+  }, [cleanupStream, stop, startTimer]);
 
   const reset = useCallback(() => {
     clearTimer();
@@ -153,8 +184,11 @@ export function useAudioRecorder() {
     permissionDenied,
     interrupted,
     error,
+    stream,
     start,
     stop,
+    pause,
+    resume,
     reset,
   };
 }
