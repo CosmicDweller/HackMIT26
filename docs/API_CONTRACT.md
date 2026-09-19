@@ -194,6 +194,7 @@ Speaker ids do not carry over between recordings.
   "durationSeconds": 8.5,
   "createdAt": "2026-09-19T18:04:11.532Z",
   "reviewStatus": "needs_review",
+  "engine": "local",
   "diarization": { "status": "ok", "speakerCount": 2 },
   "speakers": [
     { "id": "speaker_1", "label": "Speaker 1", "role": "unassigned" },
@@ -211,6 +212,7 @@ Speaker ids do not carry over between recordings.
 | `text` | The segments' text joined with a space, kept consistent when a segment is edited. |
 | `durationSeconds` | Length of the submitted audio. |
 | `reviewStatus` | `needs_review` (default) or `reviewed`. Only an explicit review action can change it (see below). Editing text, changing a speaker or assigning a role never changes it. |
+| `engine` | Which speech engine produced the transcript: `local` (default; audio never left the backend machine) or `deepgram` (opt-in cloud engine, see Privacy). Lets the UI and audits tell where audio went. |
 | `diarization.status` | `ok`, `failed` (speaker detection ran and errored or timed out) or `unavailable` (not installed or disabled). |
 | `diarization.speakerCount` | Number of speakers that own at least one segment. |
 | `speakers[].id` | Stable within this transcription; numbered by first appearance. **Speaker 1 is not assumed to be the doctor.** |
@@ -329,6 +331,10 @@ alternating turns, including a one-word reply; a single speaker gives 1 speaker.
 
 ## Privacy and security
 
+- **Optional cloud engine.** If the backend is configured with `STT_ENGINE=deepgram`, audio from the authenticated
+  `POST /api/transcriptions` is sent to Deepgram (always with `mip_opt_out=true`) and transcripts record
+  `engine: "deepgram"`. If Deepgram fails the local engine is used. The public `POST /api/transcribe` never
+  uses it. The default is `local`.
 - Transcripts are stored in a local SQLite file on the backend machine, not in Supabase or any third-party service.
   Supabase Auth only holds account credentials and email. Audio and transcripts are not sent to any external
   provider. The diarization and speech models run locally.

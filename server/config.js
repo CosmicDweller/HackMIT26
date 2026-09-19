@@ -12,6 +12,13 @@ function intFromEnv(env, name, fallback) {
 /** Build the runtime config from environment variables. Relative paths resolve against server/. */
 export function loadConfig(env = process.env) {
   return {
+    // Speech engine for authenticated transcriptions: "local" (default; audio never leaves this machine)
+    // or "deepgram" (opt-in cloud service). The public /api/transcribe is always local.
+    sttEngine: env.STT_ENGINE === "deepgram" ? "deepgram" : "local",
+    deepgramApiKey: env.DEEPGRAM_API_KEY ?? "",
+    deepgramModel: env.DEEPGRAM_MODEL ?? "nova-3",
+    deepgramBaseUrl: env.DEEPGRAM_BASE_URL ?? "https://api.deepgram.com",
+    deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 60_000),
     port: intFromEnv(env, "PORT", 3001),
     corsOrigin: env.CORS_ORIGIN ?? "http://localhost:5173",
     ffmpegBin: env.FFMPEG_BIN ?? "ffmpeg",

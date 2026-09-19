@@ -24,6 +24,14 @@ if (!config.supabaseUrl) {
   console.warn("SUPABASE_URL is not set: /api/transcriptions and /api/me will reject every request until it is configured.");
 }
 
+if (config.sttEngine === "deepgram") {
+  if (config.deepgramApiKey) {
+    console.warn("STT_ENGINE=deepgram: audio from authenticated transcriptions is sent to Deepgram (mip_opt_out=true). Synthetic data only unless a BAA and other approvals are in place.");
+  } else {
+    console.warn("STT_ENGINE=deepgram but DEEPGRAM_API_KEY is empty: the local engine is used.");
+  }
+}
+
 const server = app.listen(config.port, () => {
   console.log(`Speech-to-text server listening on http://localhost:${config.port}`);
 });

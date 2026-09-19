@@ -49,6 +49,8 @@ const MIGRATIONS = [
     FOREIGN KEY (transcription_id, speaker_id) REFERENCES speakers (transcription_id, id)
   );
   `,
+  // 2: record which speech engine produced each transcript (auditability: did audio leave the machine?)
+  `ALTER TABLE transcriptions ADD COLUMN engine TEXT NOT NULL DEFAULT 'local' CHECK (engine IN ('local', 'deepgram'));`,
 ];
 
 export function openStore(dbPath) {
@@ -84,8 +86,8 @@ export function openStore(dbPath) {
        ON CONFLICT (id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name`,
     ),
     insertTranscription: db.prepare(
-      `INSERT INTO transcriptions (id, owner_id, created_at, duration_seconds, text, diarization_status, speaker_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transcriptions (id, owner_id, created_at, duration_seconds, text, diarization_status, speaker_count, engine)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     insertSpeaker: db.prepare("INSERT INTO speakers (transcription_id, id, label, role) VALUES (?, ?, ?, ?)"),
     insertSegment: db.prepare(
@@ -133,6 +135,7 @@ export function openStore(dbPath) {
       durationSeconds: row.duration_seconds,
       createdAt: row.created_at,
       reviewStatus: row.review_status,
+      engine: row.engine,
       diarization: { status: row.diarization_status, speakerCount: row.speaker_count },
       speakers: q.speakers.all(row.id).map(({ id: speakerId, label, role }) => ({ id: speakerId, label, role })),
       segments: q.segments.all(row.id).map((segment) => ({
@@ -154,11 +157,11 @@ export function openStore(dbPath) {
       q.upsertDoctor.run(id, email ?? null, displayName ?? null, new Date().toISOString());
     },
 
-    createTranscription(ownerId, { durationSeconds, diarizationStatus, speakers, segments }) {
+    createTranscription(ownerId, { durationSeconds, diarizationStatus, speakers, segments, engine = "local" }) {
       const id = `tr_${randomUUID()}`;
       transaction(() => {
         q.insertTranscription.run(
-          id, ownerId, new Date().toISOString(), durationSeconds ?? null, joinText(segments), diarizationStatus, speakers.length,
+          id, ownerId, new Date().toISOString(), durationSeconds ?? null, joinText(segments), diarizationStatus, speakers.length, engine,
         );
         for (const speaker of speakers) q.insertSpeaker.run(id, speaker.id, speaker.label, speaker.role);
         segments.forEach((segment, index) =>

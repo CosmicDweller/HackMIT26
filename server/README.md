@@ -56,6 +56,14 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   project's public signing keys. Transcripts are stored in a local SQLite file (`DB_PATH`, default
   `data/transcripts.sqlite`, git-ignored) scoped to the verified doctor. Requires Node 24+ (`node:sqlite`, which
   prints an "experimental" notice at startup).
+- **Optional cloud engine (Deepgram), off by default.** `STT_ENGINE=deepgram` plus `DEEPGRAM_API_KEY` in `.env`
+  makes the *authenticated* `/api/transcriptions` route use Deepgram Nova for transcription and diarization in one
+  call, with word-level speaker labels and confidences (so segments split exactly at speaker changes, and
+  low-confidence runs stay `speakerId: null`). **This sends audio to a third party.** Every request sets
+  `mip_opt_out=true`; on any Deepgram error or timeout the local engine is used instead (data stays local); the
+  public `/api/transcribe` never uses it; each transcript records its `engine`. It has only been tested against
+  a stub built from Deepgram's API reference (run the live test with `DEEPGRAM_API_KEY=... DEEPGRAM_LIVE_TEST=1 node --test tests/deepgram.test.js`;
+  it uploads synthetic audio only). Use synthetic data unless a BAA and the other approvals exist.
 - **Checking a real sign-in:** with `SUPABASE_URL` set, sign in through the app, copy the session's access token
   and run `pbpaste | npm run check-token`. It reads the token from stdin, verifies it exactly like the API does and
   prints only the verified identity (never the token). The backend needs no Supabase key: only the public
@@ -150,6 +158,8 @@ npm test
   scripts and a locally generated key set, so it verifies the API and data layer only.
 - `tests/real-diarization.test.js`: real diarization and the full real pipeline (whisper.cpp + diarizer + auth +
   database) on synthetic two-voice conversations. Skipped if diarization is not installed.
+- `tests/deepgram.test.js`: the opt-in Deepgram engine against a stub server (privacy parameters, mapping,
+  fallback on every failure, no key leakage); one live test is skipped unless you opt in.
 - `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
   `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,
   WebM/Opus and header-less streamed WebM (what browsers record), asserts the actual

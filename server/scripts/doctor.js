@@ -83,6 +83,14 @@ if (!diarization.enabled) {
   warn("not installed: transcripts will have no speaker labels", "npm run setup:diarization");
 }
 
+console.log("\nSpeech engine");
+if (config.sttEngine === "deepgram") {
+  if (config.deepgramApiKey) warn("Deepgram is ON: audio from authenticated transcriptions leaves this machine (mip_opt_out=true)", "set STT_ENGINE=local to keep everything on this machine");
+  else warn("STT_ENGINE=deepgram but DEEPGRAM_API_KEY is empty: the local engine will be used");
+} else {
+  ok("local (audio never leaves this machine)");
+}
+
 console.log("\nAccounts");
 if (config.supabaseUrl) {
   ok(`Supabase Auth configured (${new URL(config.supabaseUrl).host})`);

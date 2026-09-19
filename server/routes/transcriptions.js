@@ -62,6 +62,7 @@ export function createTranscriptionsRouter(config, pipeline, store, authenticate
       resource = store.createTranscription(req.user.id, {
         durationSeconds: result.durationSeconds,
         diarizationStatus: result.diarization.status,
+        engine: result.engine,
         speakers,
         segments,
       });
