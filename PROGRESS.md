@@ -33,3 +33,11 @@ Project setup / interface definition. No application code written yet.
 ## Next specific action
 Agree on and document the API contract for the transcription and SOAP note
 pipeline, then begin scaffolding frontend/backend implementations.
+
+## Backend status (lz, speech-to-text)
+- `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`
+  (Express + FFmpeg + whisper.cpp `base.en`, real inference verified; ~0.6 s for a 55 s clip on M4 Pro).
+- 26 tests pass (`cd server && npm test`), including 2 real-inference tests.
+- Setup: `brew install ffmpeg whisper-cpp`, then `cd server && npm install && npm run setup:model`. See `server/README.md`.
+- Proposed contract details (HTTP status codes, CORS, silence -> 422) await frontend confirmation on issue #3.
+- Not merged or deployed. Vercel cannot run whisper.cpp; the backend needs a host with FFmpeg, whisper-cli and the model.
