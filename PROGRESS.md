@@ -61,12 +61,12 @@ Coordinate with the backend agent on issue #3 to confirm the API contract,
 then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
 
 ## Backend status (lz)
-- v1 (`POST /api/transcribe`, `GET /api/health`) is merged and unchanged. See `docs/API_CONTRACT.md`.
-- v2 (agreed on issue #3): speaker diarization (local sherpa-onnx), Supabase Auth JWT
-  verification, and per-doctor transcript storage (local SQLite) with speaker roles, segment corrections, history
-  and deletion. 120 backend tests pass (1 live Deepgram test skipped without a key), including real diarization and a real end-to-end run on synthetic
-  two-voice conversations (8/8 turns correct; overlapping speech is a known weak spot).
-- Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor`.
-- Optional Deepgram cloud engine (STT_ENGINE=deepgram, model nova-3-medical, verified live with synthetic audio; sends audio to a third party).
-- Review confirmation (`POST /api/transcriptions/:id/review`) is implemented (frontend agreed on #3).
-- Not done / needs decisions: an end-to-end test with a real signed-in user's token, pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.
+- v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
+- v3 (branch `lz`): **Deepgram Nova-3 Medical + the latest batch diarizer is the primary engine**, with a persistent job system
+  (`/api/transcription-jobs*`), file-backed recordings up to 2 hours, `needsReview` flags, `diarizationStatus`, and a secured (off by
+  default) callback listener for long recordings. whisper.cpp remains an optional fallback (`STT_ENGINE=local`).
+- Verified live with synthetic audio: exact request, model `medical-nova-3`, diarizer v2, A-B-A / 3-speaker / 5-minute recordings
+  through the full stack (WER 0-2.5%, DER 0.4-9.9%; the 3-speaker case has a documented misattribution). A real 7200 s file passes
+  validation (stub Deepgram). **Not verified:** 30-minute and 2-hour recordings against the real service, callbacks against the real service.
+- Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
+- Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

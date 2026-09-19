@@ -150,6 +150,12 @@ export async function requestDeepgram(filePath, config, { contentType, timeoutMs
 // did not end a sentence. Also the pause that starts a new group when no utterances are available.
 const MERGE_GAP_MS = 1000;
 const SENTENCE_END = /[.?!]["')\]]*$/;
+// Review flag rule (an advisory heuristic, tuned only on tiny synthetic data): a word below the review
+// confidence flags its segment only when it is long enough to carry content (drug names, terms), because
+// short function words such as "and" often score low without being wrong (flagging them marked ~60% of
+// segments in a five-minute test). A very uncertain word always flags.
+const REVIEW_MIN_WORD_LENGTH = 5;
+const REVIEW_ALWAYS_BELOW = 0.5;
 
 const validTime = (word) => Number.isFinite(word.start) && Number.isFinite(word.end) && word.start >= 0 && word.end >= word.start;
 const mean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
@@ -266,7 +272,10 @@ export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85,
     const needsReview =
       run.speaker === null ||
       timed.length !== run.words.length ||
-      (wordConfidences.length > 0 && Math.min(...wordConfidences) < reviewWordConfidence) ||
+      run.words.some((word) => word.confidence !== null && (
+        word.confidence < REVIEW_ALWAYS_BELOW ||
+        (word.confidence < reviewWordConfidence && word.text.replace(/[^a-z0-9]/gi, "").length >= REVIEW_MIN_WORD_LENGTH)
+      )) ||
       (meanSpeaker !== null && meanSpeaker < reviewSpeakerConfidence);
     return {
       startMs: Math.round(timed[0].start * 1000),

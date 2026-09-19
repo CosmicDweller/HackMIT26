@@ -56,14 +56,23 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   project's public signing keys. Transcripts are stored in a local SQLite file (`DB_PATH`, default
   `data/transcripts.sqlite`, git-ignored) scoped to the verified doctor. Requires Node 24+ (`node:sqlite`, which
   prints an "experimental" notice at startup).
-- **Optional cloud engine (Deepgram), off by default.** `STT_ENGINE=deepgram` plus `DEEPGRAM_API_KEY` in `.env`
-  makes the *authenticated* `/api/transcriptions` route use Deepgram Nova for transcription and diarization in one
-  call, with word-level speaker labels and confidences (so segments split exactly at speaker changes, and
-  low-confidence runs stay `speakerId: null`). **This sends audio to a third party.** Every request sets
-  `mip_opt_out=true`; on any Deepgram error or timeout the local engine is used instead (data stays local); the
-  public `/api/transcribe` never uses it; each transcript records its `engine`. Default model `nova-3-medical` (clinical vocabulary, English only). Automated tests use a stub built from
-  Deepgram's API reference, and the live service was verified with synthetic audio (`npm run check-deepgram`; run the live test with `DEEPGRAM_API_KEY=... DEEPGRAM_LIVE_TEST=1 node --test tests/deepgram.test.js`;
-  it uploads synthetic audio only). Use synthetic data unless a BAA and the other approvals exist.
+- **Speech engine: Deepgram Nova-3 Medical (primary).** Signed-in recordings are transcribed AND diarized by Deepgram in one
+  request (`model=nova-3-medical`, `diarize_model=latest` = the batch diarizer, `utterances`, `smart_format`, `language=en`,
+  `mip_opt_out=true`). **This sends audio to a third party** (the app runs locally on your Mac; Deepgram is a remote hosted
+  API). Set `DEEPGRAM_API_KEY` in `.env` (git-ignored). There is no automatic fallback: a Deepgram failure is a failed job.
+  The whisper.cpp + sherpa-onnx engine is a separate optional fallback (`STT_ENGINE=local`; short recordings only), and the
+  public `/api/transcribe` always uses it. Whisper text is never mixed with Deepgram speakers. Synthetic data only until a BAA
+  and the other approvals in the contract exist.
+- **Recordings and jobs.** Every authenticated recording is a persistent job (`POST /api/transcription-jobs`, poll
+  `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 2 hours / 1 GiB,
+  written to disk (never held in memory), verified by decoding the whole file, sent to Deepgram as FLAC streamed from disk.
+  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (30 min) need a callback URL, which is off by default and needs a public
+  endpoint (it cannot reach localhost); without it they are rejected before any audio is sent. Timeouts and restarts never
+  trigger an automatic resubmission (you would be billed twice). See the contract for statuses, errors and retention.
+- **Evaluating it.** `npm run eval:deepgram` scores the live engine on the synthetic recordings (WER, diarization error rate,
+  word-to-speaker accuracy, speaker count) and `npm run check-deepgram` prints exactly what Deepgram reports (model, `diarize_info`).
+  Live end-to-end tests run only with `DEEPGRAM_LIVE_TEST=1` (they upload synthetic audio and cost a few cents). Long synthetic
+  recordings: `python3 scripts/make-long-recording.py medical 30 tests/.generated/medical-30min.wav` (git-ignored).
 - **Checking a real sign-in:** with `SUPABASE_URL` set, sign in through the app, copy the session's access token
   and run `pbpaste | npm run check-token`. It reads the token from stdin, verifies it exactly like the API does and
   prints only the verified identity (never the token). The backend needs no Supabase key: only the public
@@ -158,8 +167,11 @@ npm test
   scripts and a locally generated key set, so it verifies the API and data layer only.
 - `tests/real-diarization.test.js`: real diarization and the full real pipeline (whisper.cpp + diarizer + auth +
   database) on synthetic two-voice conversations. Skipped if diarization is not installed.
-- `tests/deepgram.test.js`: the opt-in Deepgram engine against a stub server (privacy parameters, mapping,
-  fallback on every failure, no key leakage); one live test is skipped unless you opt in.
+- `tests/normalize.test.js`: turning real Deepgram responses (saved in `tests/fixtures/deepgram/`) into segments.
+- `tests/deepgram.test.js`: the Deepgram client against a stub (exact parameters, streaming, error classification, no key leakage).
+- `tests/jobs.test.js`: the job system against a stub that replays real responses (lifecycle, retries, duplicate-charge safety,
+  restart recovery, retention, callbacks, ownership, a real 7200 s boundary).
+- `tests/real-deepgram.test.js`: LIVE Deepgram through the full stack; skipped unless `DEEPGRAM_LIVE_TEST=1` and a key are set.
 - `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
   `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,
   WebM/Opus and header-less streamed WebM (what browsers record), asserts the actual
