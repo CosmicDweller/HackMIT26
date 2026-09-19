@@ -24,12 +24,16 @@ export interface DiarizationInfo {
   speakerCount: number;
 }
 
+/** Which speech engine produced the transcript — lets the UI show where audio went. */
+export type TranscriptionEngine = "local" | "deepgram";
+
 export interface Transcription {
   id: string;
   text: string;
   durationSeconds: number | null;
   reviewStatus: ReviewStatus;
   createdAt: string;
+  engine: TranscriptionEngine;
   speakers: Speaker[];
   segments: TranscriptSegment[];
   diarization: DiarizationInfo;

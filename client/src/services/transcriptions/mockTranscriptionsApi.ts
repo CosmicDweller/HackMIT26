@@ -71,6 +71,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       durationSeconds: 38.5,
       reviewStatus: "needs_review",
       createdAt: new Date().toISOString(),
+      engine: "local",
       speakers: structuredClone(FIXTURE_SPEAKERS),
       segments: structuredClone(FIXTURE_SEGMENTS),
       diarization: { status: "ok", speakerCount: FIXTURE_SPEAKERS.length },

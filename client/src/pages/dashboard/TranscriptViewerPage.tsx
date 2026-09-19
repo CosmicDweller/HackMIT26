@@ -87,8 +87,13 @@ export function TranscriptViewerPage() {
           <h1 className="text-xl font-semibold tracking-tight">
             {formatDate(transcription.createdAt)}
           </h1>
-          <div className="mt-1">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <ReviewStatusBadge status={transcription.reviewStatus} />
+            <span className="text-xs text-muted-foreground">
+              {transcription.engine === "deepgram"
+                ? "Processed by Deepgram (cloud)"
+                : "Processed locally"}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

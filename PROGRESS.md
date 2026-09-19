@@ -1,81 +1,68 @@
 # Progress
 
 ## Current milestone
-`client/` aligned with the agreed v2 contract (`docs/API_CONTRACT.md` on
-`lz`, PR #6). Real Supabase Auth is wired up and **verified working
-end-to-end** (sign up → real confirmation email → confirm → sign in → sign
-out → sign back in, zero console errors). `VITE_USE_MOCK_TRANSCRIPTIONS`
-still defaults to true since `/api/transcriptions*` (PR #6) isn't merged
-into `main` yet.
+**Full stack verified end-to-end against the real backend.** PR #6 (backend
+v2: diarization, Supabase Auth, per-doctor transcripts) is merged into
+`main`. `kv` is merged with `main`, `VITE_USE_MOCK_AUTH=false` and
+`VITE_USE_MOCK_TRANSCRIPTIONS=false`, and the whole doctor workspace was run
+for real — real sign-in, real whisper.cpp transcription, real local
+diarization — with zero console errors.
 
 ## Completed features
 - Original single-speaker quick-transcribe flow (`/`) preserved unchanged —
   record/upload → transcribe → edit/copy/download, still against
   `POST /api/transcribe` (real or mock via `VITE_USE_MOCK_API`).
 - Blue brand palette applied via design tokens (`client/src/index.css`) —
-  Egyptian Blue / Sapphire Sky / Glaucous / Baby Blue Ice / Pale Sky. Every
-  component already used semantic tokens (`bg-primary`, `ring-ring`, etc.),
-  so no component files needed changes. Status colors (amber/emerald) and
-  the multi-hue speaker palette were kept as-is — they're functional
-  signals, not brand styling.
+  Egyptian Blue / Sapphire Sky / Glaucous / Baby Blue Ice / Pale Sky.
 - Doctor workspace (dashboard, new transcription, speaker-separated
-  transcript viewer, history, export) — see prior entries; unchanged in
-  shape, now fixed to match the real backend contract:
-  - **List envelope**: `list()` now unwraps `{ transcriptions: [...] }`
-    instead of expecting a bare array.
-  - **204 on delete**: the request helper no longer tries to parse a body
-    for a 204 response (previously `remove()` would throw on every
-    successful delete).
-  - **Error codes**: renamed `UNAUTHORIZED` → `UNAUTHENTICATED` to match the
-    backend; added `INVALID_REQUEST` and `SERVER_ERROR`. On
-    `UNAUTHENTICATED` the client now calls `signOut()`, which flips auth
-    state and lets `ProtectedRoute` redirect to `/login` automatically.
-  - **Review status is no longer client-derived.** Previously the mock
-    flipped `reviewStatus` to `reviewed` automatically once every speaker
-    had a role — the real backend never does this. Added an explicit
-    "Mark as reviewed" button (`POST /api/transcriptions/:id/review`, no
-    body) and removed the auto-derivation from the mock so it matches.
-  - **`diarization.status`**: new field on the transcription resource
-    (`ok` | `failed` | `unavailable`). When not `ok`, the client shows
-    "speaker detection unavailable/failed — assign speakers manually"
-    instead of an empty or misleadingly-normal speaker view.
-  - **`expectedSpeakers`**: the new-transcription flow now sends
-    `expectedSpeakers=2` with the upload (a consultation is doctor +
-    patient by default), per the backend's note that it improves speaker
-    counting.
-  - Mock (`mockTranscriptionsApi.ts`) updated to match all of the above so
-    it still behaves like the real backend.
-- Real Supabase Auth provider added (`services/auth/supabaseAuthProvider.ts`,
-  `@supabase/supabase-js`), implementing the same `AuthProvider` interface
-  as the mock — sign up/in/out, password reset, session, and the access
-  token attached as `Authorization: Bearer` by the transcriptions API
-  client. Selected automatically when `VITE_USE_MOCK_AUTH=false`.
-  Credentials received from the owner and put in `client/.env.local`
-  (gitignored).
-  - Found and fixed a real bug during testing: Supabase's project requires
-    email confirmation, so `signUp()` succeeds with no session yet — this
-    was surfacing as a red error ("Account created — check your email...")
-    when it's actually a success case. Changed `AuthProvider.signUp()` to
-    return a `{status: "signed_in" | "confirmation_required"}` result
-    instead of throwing, so the signup page can show it as a neutral
-    notice. Mock provider updated to match the new signature.
-  - **Verified for real, not just against the mock**: signed up with a
-    disposable test address, received the actual Supabase confirmation
-    email, clicked the real confirmation link, landed authenticated on
-    `/dashboard`, signed out, signed back in — all against the owner's
-    live Supabase project. No console errors at any step.
-- Verified in Chrome (mock transcriptions) after the contract fixes: sign
-  up → new transcription → assign both speakers → review status correctly
-  stays "Needs review" (confirms the derivation bug is fixed) → "Mark as
-  reviewed" flips it → no console errors. Lint and production build pass.
+  transcript viewer, history, export), fully aligned with contract v2:
+  list envelope, 204-on-delete, `UNAUTHENTICATED`/`INVALID_REQUEST`/
+  `SERVER_ERROR` codes with auto sign-out on session expiry, explicit
+  "Mark as reviewed" (no client-derived review status), `diarization.status`
+  handling, `expectedSpeakers=2` on upload, and now `engine` ("Processed
+  locally" / "Processed by Deepgram (cloud)" shown on the transcript).
+- Real Supabase Auth (`services/auth/supabaseAuthProvider.ts`) verified
+  end-to-end earlier (signup → real confirmation email → confirm → sign
+  in/out).
+
+## Verified for real today (not mocks), against the merged backend
+Ran `cd server && npm install && npm run setup:model && npm run
+setup:diarization` locally (Node 23.6 — `node:sqlite` and the diarization
+Python venv both work fine despite the README's Node 24 recommendation),
+`npm run doctor` (all green: FFmpeg, whisper-cli, both models, diarization,
+Supabase config, a real transcription, and real diarization on synthetic
+audio), then `npm start`.
+
+With the client pointed at it for real:
+- Signed in with a real (previously-confirmed) Supabase account.
+- Uploaded the backend's own `two-speaker.wav` fixture. Got back a real
+  `tr_<uuid>` transcription: accurate whisper.cpp text, and diarization
+  correctly alternated every turn between the two speakers.
+- Assigned Speaker 1 → Doctor, Speaker 2 → Patient — persisted correctly,
+  applied to every segment, `reviewStatus` correctly stayed `needs_review`
+  (not auto-flipped — confirms that fix holds against real data).
+- "Mark as reviewed" → flipped to `reviewed`. Edited a segment's text →
+  **automatically flipped back to `needs_review` and the "Mark as
+  reviewed" button reappeared, with zero client-side logic for this** —
+  the UI just reflects whatever the backend returns, exactly as designed.
+- Export (while reviewed, no confirm-dialog risk in the automated browser).
+- Transcript history showed the real transcript with correct duration and
+  status.
+- Verified `DELETE` directly (via the page's own authenticated `fetch`,
+  bypassing the confirm() dialog that automation can't click through):
+  real `204` with an empty body, exactly matching the fix from last
+  session. Reflected correctly in the UI after reload.
+- Server logs stayed clean throughout — no audio, tokens, or transcript
+  text logged, matching their stated privacy commitment.
+- Zero console errors at any step of the whole session.
 
 ## Remaining prioritized tasks
-1. Once backend PR #6 is merged/running locally, set
-   `VITE_USE_MOCK_TRANSCRIPTIONS=false` and verify the full flow (real auth
-   + real diarization) end to end.
-2. Mobile-width layout not manually verified (same known limitation as
-   before).
-3. Deploy to Vercel.
+1. Mobile-width layout not manually verified (browser automation here
+   can't reliably resize the viewport).
+2. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
+   per backend's plan, since Vercel can't run whisper.cpp).
+3. Optional: surface `GET /api/me` somewhere (not required by any current
+   screen).
 
 ## Architectural decisions
 - `client/` owned by the frontend agent (branch `kv`); backend owned by the
@@ -84,23 +71,22 @@ into `main` yet.
   authenticated flow, per "preserve existing functionality."
 - Auth and the transcriptions API each sit behind their own
   provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
-  `VITE_USE_MOCK_TRANSCRIPTIONS`), same pattern as the existing
-  `VITE_USE_MOCK_API` — real backends swap in without UI changes. Real
-  Supabase provider is written but gated on missing credentials.
+  `VITE_USE_MOCK_TRANSCRIPTIONS`) — both now flipped to `false` locally
+  since the real backend is verified working.
 
 ## Known bugs and blockers
-- `/api/transcriptions*` v2 is built on `lz`/PR #6 but not merged into
-  `main`; client still defaults to mocks for this feature. Real auth is no
-  longer blocked — verified working.
+- None currently. Both mock flags can stay `false` for local dev/demo as
+  long as `server/` is running with models set up.
 
 ## Test and deployment status
-- No automated tests. Manually verified in Chrome per the flow above,
-  including a real (non-mock) Supabase auth round trip. Lint (`oxlint`) and
-  build (`tsc -b && vite build`) both pass. No deployment yet.
+- No automated tests on the client. Full manual pass against the real
+  backend today (see above) plus the earlier real-auth-only pass. Lint
+  (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment
+  yet.
 
 ## Next specific action
-Once backend PR #6 lands, flip `VITE_USE_MOCK_TRANSCRIPTIONS=false` and
-verify the full authenticated + diarized flow against the real backend.
+Decide on deployment: client to Vercel, backend to a machine that can run
+whisper.cpp + the diarization venv (per backend's tunnel plan).
 
 ## Backend status (lz)
 - v1 (`POST /api/transcribe`, `GET /api/health`) is merged and unchanged. See `docs/API_CONTRACT.md`.
@@ -111,4 +97,5 @@ verify the full authenticated + diarized flow against the real backend.
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor`.
 - Optional Deepgram cloud engine (STT_ENGINE=deepgram, model nova-3-medical, verified live with synthetic audio; sends audio to a third party).
 - Review confirmation (`POST /api/transcriptions/:id/review`) is implemented (frontend agreed on #3).
-- Not done / needs decisions: an end-to-end test with a real signed-in user's token, pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.
+- **Merged into `main` (593bb45).** Contract v2 marked agreed in `docs/API_CONTRACT.md`.
+- Not done / needs decisions: pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.
