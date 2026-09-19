@@ -12,8 +12,13 @@
 // responses are saved in tests/fixtures/deepgram/.
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
+import http from "node:http";
+import https from "node:https";
+import { pipeline } from "node:stream";
 import { requestCancelled } from "../lib/errors.js";
+
+// Upper bound for a provider response held in memory (a two-hour transcript is tens of MB).
+const MAX_RESPONSE_BYTES = 512 * 1024 * 1024;
 
 /**
  * A classified provider failure. `code` is safe to show; `retriable` says whether an explicit retry can
@@ -75,46 +80,63 @@ function classifyHttpError(status, bodyText) {
 }
 
 /**
- * POST a file to Deepgram, streaming it from disk (nothing is buffered in memory).
+ * POST a file to Deepgram, streaming it from disk with backpressure: the file is never held in memory
+ * (node:http/https is used rather than fetch, whose stream bodies were measured to buffer whole files).
  * Resolves with the parsed JSON body. With `callbackUrl`, Deepgram answers immediately with
  * { request_id } and delivers the transcript to that URL later.
- * `onBodySent` fires when the whole file has been read for sending: from then on we are waiting for
- * Deepgram to process it.
+ * `onBodySent` fires when the whole file has been flushed to the network: from then on we are waiting
+ * for Deepgram to process it.
  * Throws DeepgramError, or requestCancelled if `signal` aborts.
  */
 export async function requestDeepgram(filePath, config, { contentType, timeoutMs, signal, callbackUrl, model, onBodySent } = {}) {
   if (!deepgramConfigured(config)) throw new DeepgramError("PROVIDER_NOT_CONFIGURED");
 
   const { size } = await stat(filePath);
-  const stream = createReadStream(filePath);
-  if (onBodySent) stream.once("end", onBodySent);
+  const url = new URL(`${config.deepgramBaseUrl.replace(/\/+$/, "")}/v1/listen?${buildQuery(config, { callbackUrl, model })}`);
+  const transport = url.protocol === "http:" ? http : https;
+  const timeout = AbortSignal.timeout(Math.max(1, timeoutMs ?? config.deepgramTimeoutMs));
+  const combined = AbortSignal.any([signal, timeout].filter(Boolean));
 
-  const url = `${config.deepgramBaseUrl.replace(/\/+$/, "")}/v1/listen?${buildQuery(config, { callbackUrl, model })}`;
-  let response;
-  try {
-    response = await fetch(url, {
+  const response = await new Promise((resolve, reject) => {
+    const req = transport.request(url, {
       method: "POST",
-      headers: { Authorization: `Token ${config.deepgramApiKey}`, "Content-Type": contentType, "Content-Length": String(size) },
-      body: Readable.toWeb(stream),
-      duplex: "half",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, timeoutMs ?? config.deepgramTimeoutMs))].filter(Boolean)),
+      headers: { Authorization: `Token ${config.deepgramApiKey}`, "Content-Type": contentType, "Content-Length": size },
+      signal: combined,
     });
-  } catch (error) {
-    stream.destroy();
+    req.once("finish", () => onBodySent?.());
+    req.once("response", resolve);
+    req.once("error", reject);
+    pipeline(createReadStream(filePath), req, () => {});
+  }).catch((error) => {
     if (signal?.aborted) throw requestCancelled();
-    if (error?.name === "TimeoutError") throw new DeepgramError("PROVIDER_TIMEOUT", { retriable: true });
+    if (timeout.aborted) throw new DeepgramError("PROVIDER_TIMEOUT", { retriable: true });
     // A refused/unreachable connection never reached Deepgram, so resubmitting cannot double-bill.
-    const refused = ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(error?.cause?.code);
+    const refused = ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(error?.code);
     throw new DeepgramError("PROVIDER_UNAVAILABLE", { retriable: true, autoRetry: refused });
-  }
+  });
 
-  if (!response.ok) {
-    // Read (a little of) the body only to classify the error; it is never logged or returned.
-    const text = (await response.text().catch(() => "")).slice(0, 2000);
-    throw classifyHttpError(response.status, text);
+  // Read the answer (size-capped). A failure here happens after the audio was sent.
+  const chunks = [];
+  let received = 0;
+  try {
+    for await (const chunk of response) {
+      received += chunk.length;
+      if (received > MAX_RESPONSE_BYTES) throw new DeepgramError("PROVIDER_MALFORMED_RESPONSE");
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    if (signal?.aborted) throw requestCancelled();
+    if (error instanceof DeepgramError) throw error;
+    throw new DeepgramError(timeout.aborted ? "PROVIDER_TIMEOUT" : "PROVIDER_UNAVAILABLE", { retriable: true });
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    // The body is used only to classify the error; it is never logged or returned.
+    throw classifyHttpError(response.statusCode, text.slice(0, 2000));
   }
   try {
-    return await response.json();
+    return JSON.parse(text);
   } catch {
     throw new DeepgramError("PROVIDER_MALFORMED_RESPONSE");
   }
