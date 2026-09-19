@@ -171,9 +171,12 @@ describe("creating and reading transcriptions", () => {
       { id: "speaker_2", label: "Speaker 2", role: "unassigned" },
     ]);
     assert.deepEqual(t.segments, [
-      { id: "segment_1", startMs: 250, endMs: 1500, text: "Hello", speakerId: "speaker_1" },
-      { id: "segment_2", startMs: 1500, endMs: 3000, text: "world.", speakerId: "speaker_2" },
+      { id: "segment_1", startMs: 250, endMs: 1500, text: "Hello", speakerId: "speaker_1", needsReview: false },
+      { id: "segment_2", startMs: 1500, endMs: 3000, text: "world.", speakerId: "speaker_2", needsReview: false },
     ]);
+    assert.equal(t.status, "completed");
+    assert.equal(t.diarizationStatus, "completed");
+    assert.deepEqual(t.warnings, []);
     assert.ok(!("ownerId" in t) && !("owner_id" in t), "owner id must not be exposed");
     assert.deepEqual(await leftoverFiles(tmpDir), [], "raw audio must not be retained");
   });
@@ -350,7 +353,7 @@ describe("segment corrections", () => {
 
     const res = await call(token, "PATCH", url, { text: "  World, corrected.  ", speakerId: "speaker_1" });
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.segments[1], { id: "segment_2", startMs: 1500, endMs: 3000, text: "World, corrected.", speakerId: "speaker_1" });
+    assert.deepEqual(res.body.segments[1], { id: "segment_2", startMs: 1500, endMs: 3000, text: "World, corrected.", speakerId: "speaker_1", needsReview: false });
     assert.equal(res.body.text, "Hello World, corrected.");
     assert.equal(res.body.reviewStatus, "needs_review");
 

@@ -14,7 +14,11 @@ export const jfkWav = path.join(fixtureDir, "jfk.wav");
 export async function makeConfig(overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "stt-test-"));
   const tmpDir = path.join(root, "work");
-  const config = { ...loadConfig({}), tmpDir, dbPath: path.join(root, "db", "test.sqlite"), ...overrides };
+  // Tests default to the local engine (fast, no network). Deepgram tests opt in explicitly.
+  const config = {
+    ...loadConfig({}), tmpDir, uploadDir: path.join(root, "uploads"), dbPath: path.join(root, "db", "test.sqlite"),
+    sttEngine: "local", deepgramApiKey: "", ...overrides,
+  };
   return { config, root, tmpDir, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 

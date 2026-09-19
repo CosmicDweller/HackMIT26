@@ -1,0 +1,495 @@
+{
+ "metadata": {
+  "transaction_key": "scrubbed",
+  "request_id": "scrubbed",
+  "sha256": "scrubbed",
+  "created": "scrubbed",
+  "duration": 9.298,
+  "channels": 1,
+  "models": [
+   "c0244ab1-78fc-4baf-886a-2e3f17013da8"
+  ],
+  "model_info": {
+   "c0244ab1-78fc-4baf-886a-2e3f17013da8": {
+    "name": "medical-nova-3",
+    "version": "2026-05-18.18466",
+    "arch": "nova-3"
+   }
+  },
+  "diarize_info": {
+   "model_uuid": "6946b038-8264-4505-acf7-9822c009fecb",
+   "arch": "v2"
+  }
+ },
+ "results": {
+  "channels": [
+   {
+    "alternatives": [
+     {
+      "transcript": "Good morning, what brings you in today? Are you eating regularly? Any fever? Thank you, I will order a blood test.",
+      "confidence": 1.0,
+      "words": [
+       {
+        "word": "good",
+        "start": 0.16,
+        "end": 0.64,
+        "confidence": 0.9980469,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "Good"
+       },
+       {
+        "word": "morning",
+        "start": 0.64,
+        "end": 1.1999999,
+        "confidence": 0.7858887,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "morning,"
+       },
+       {
+        "word": "what",
+        "start": 1.1999999,
+        "end": 1.52,
+        "confidence": 0.97314453,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "what"
+       },
+       {
+        "word": "brings",
+        "start": 1.52,
+        "end": 1.8399999,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "brings"
+       },
+       {
+        "word": "you",
+        "start": 1.8399999,
+        "end": 2.0,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "you"
+       },
+       {
+        "word": "in",
+        "start": 2.0,
+        "end": 2.24,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "in"
+       },
+       {
+        "word": "today",
+        "start": 2.24,
+        "end": 2.8799999,
+        "confidence": 0.9995117,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "today?"
+       },
+       {
+        "word": "are",
+        "start": 3.1999998,
+        "end": 3.52,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "Are"
+       },
+       {
+        "word": "you",
+        "start": 3.52,
+        "end": 3.6,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "you"
+       },
+       {
+        "word": "eating",
+        "start": 3.6,
+        "end": 3.9199998,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "eating"
+       },
+       {
+        "word": "regularly",
+        "start": 3.9199998,
+        "end": 4.8,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "regularly?"
+       },
+       {
+        "word": "any",
+        "start": 4.96,
+        "end": 5.3599997,
+        "confidence": 0.99902344,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "Any"
+       },
+       {
+        "word": "fever",
+        "start": 5.3599997,
+        "end": 6.08,
+        "confidence": 0.9995117,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "fever?"
+       },
+       {
+        "word": "thank",
+        "start": 6.3999996,
+        "end": 6.7999997,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "Thank"
+       },
+       {
+        "word": "you",
+        "start": 6.7999997,
+        "end": 7.2799997,
+        "confidence": 0.7338867,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "you,"
+       },
+       {
+        "word": "i",
+        "start": 7.2799997,
+        "end": 7.52,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "I"
+       },
+       {
+        "word": "will",
+        "start": 7.52,
+        "end": 7.7599998,
+        "confidence": 0.9980469,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "will"
+       },
+       {
+        "word": "order",
+        "start": 7.7599998,
+        "end": 8.0,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "order"
+       },
+       {
+        "word": "a",
+        "start": 8.0,
+        "end": 8.16,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "a"
+       },
+       {
+        "word": "blood",
+        "start": 8.16,
+        "end": 8.4,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "blood"
+       },
+       {
+        "word": "test",
+        "start": 8.4,
+        "end": 8.8,
+        "confidence": 0.97094727,
+        "speaker": 0,
+        "speaker_confidence": 0.98,
+        "punctuated_word": "test."
+       }
+      ],
+      "paragraphs": {
+       "transcript": "\nSpeaker 0: Good morning, what brings you in today? Are you eating regularly? Any fever? Thank you, I will order a blood test.",
+       "paragraphs": [
+        {
+         "sentences": [
+          {
+           "text": "Good morning, what brings you in today?",
+           "start": 0.16,
+           "end": 2.8799999
+          },
+          {
+           "text": "Are you eating regularly?",
+           "start": 3.1999998,
+           "end": 4.8
+          },
+          {
+           "text": "Any fever?",
+           "start": 4.96,
+           "end": 6.08
+          },
+          {
+           "text": "Thank you, I will order a blood test.",
+           "start": 6.3999996,
+           "end": 8.8
+          }
+         ],
+         "speaker": 0,
+         "num_words": 21,
+         "start": 0.16,
+         "end": 8.8
+        }
+       ]
+      }
+     }
+    ]
+   }
+  ],
+  "utterances": [
+   {
+    "start": 0.16,
+    "end": 2.8799999,
+    "confidence": 0.9652274,
+    "channel": 0,
+    "transcript": "Good morning, what brings you in today?",
+    "words": [
+     {
+      "word": "good",
+      "start": 0.16,
+      "end": 0.64,
+      "confidence": 0.9980469,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "Good"
+     },
+     {
+      "word": "morning",
+      "start": 0.64,
+      "end": 1.1999999,
+      "confidence": 0.7858887,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "morning,"
+     },
+     {
+      "word": "what",
+      "start": 1.1999999,
+      "end": 1.52,
+      "confidence": 0.97314453,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "what"
+     },
+     {
+      "word": "brings",
+      "start": 1.52,
+      "end": 1.8399999,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "brings"
+     },
+     {
+      "word": "you",
+      "start": 1.8399999,
+      "end": 2.0,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "you"
+     },
+     {
+      "word": "in",
+      "start": 2.0,
+      "end": 2.24,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "in"
+     },
+     {
+      "word": "today",
+      "start": 2.24,
+      "end": 2.8799999,
+      "confidence": 0.9995117,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "today?"
+     }
+    ],
+    "speaker": 0,
+    "id": "5ecd30bc-952a-407c-9a5b-6f5432dded31"
+   },
+   {
+    "start": 3.1999998,
+    "end": 4.8,
+    "confidence": 1.0,
+    "channel": 0,
+    "transcript": "Are you eating regularly?",
+    "words": [
+     {
+      "word": "are",
+      "start": 3.1999998,
+      "end": 3.52,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "Are"
+     },
+     {
+      "word": "you",
+      "start": 3.52,
+      "end": 3.6,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "you"
+     },
+     {
+      "word": "eating",
+      "start": 3.6,
+      "end": 3.9199998,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "eating"
+     },
+     {
+      "word": "regularly",
+      "start": 3.9199998,
+      "end": 4.8,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "regularly?"
+     }
+    ],
+    "speaker": 0,
+    "id": "fd20cf75-5ed0-44c8-b61e-45fa7f25ed23"
+   },
+   {
+    "start": 4.96,
+    "end": 6.08,
+    "confidence": 0.9992676,
+    "channel": 0,
+    "transcript": "Any fever?",
+    "words": [
+     {
+      "word": "any",
+      "start": 4.96,
+      "end": 5.3599997,
+      "confidence": 0.99902344,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "Any"
+     },
+     {
+      "word": "fever",
+      "start": 5.3599997,
+      "end": 6.08,
+      "confidence": 0.9995117,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "fever?"
+     }
+    ],
+    "speaker": 0,
+    "id": "1570b725-2679-4442-b02c-3626ffddb7d9"
+   },
+   {
+    "start": 6.3999996,
+    "end": 8.8,
+    "confidence": 0.9628601,
+    "channel": 0,
+    "transcript": "Thank you, I will order a blood test.",
+    "words": [
+     {
+      "word": "thank",
+      "start": 6.3999996,
+      "end": 6.7999997,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "Thank"
+     },
+     {
+      "word": "you",
+      "start": 6.7999997,
+      "end": 7.2799997,
+      "confidence": 0.7338867,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "you,"
+     },
+     {
+      "word": "i",
+      "start": 7.2799997,
+      "end": 7.52,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "I"
+     },
+     {
+      "word": "will",
+      "start": 7.52,
+      "end": 7.7599998,
+      "confidence": 0.9980469,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "will"
+     },
+     {
+      "word": "order",
+      "start": 7.7599998,
+      "end": 8.0,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "order"
+     },
+     {
+      "word": "a",
+      "start": 8.0,
+      "end": 8.16,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "a"
+     },
+     {
+      "word": "blood",
+      "start": 8.16,
+      "end": 8.4,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "blood"
+     },
+     {
+      "word": "test",
+      "start": 8.4,
+      "end": 8.8,
+      "confidence": 0.97094727,
+      "speaker": 0,
+      "speaker_confidence": 0.98,
+      "punctuated_word": "test."
+     }
+    ],
+    "speaker": 0,
+    "id": "829a39be-3823-494c-ae4c-936369d0bf2b"
+   }
+  ]
+ }
+}

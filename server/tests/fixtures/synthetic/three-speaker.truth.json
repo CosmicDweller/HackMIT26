@@ -1,0 +1,52 @@
+{
+  "voices": {
+    "A": "Daniel",
+    "B": "Samantha",
+    "C": "Fred"
+  },
+  "durationMs": 19011,
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Good morning. Thank you both for coming in.",
+      "startMs": 300,
+      "endMs": 2926
+    },
+    {
+      "speaker": "B",
+      "text": "Good morning doctor. I have been very tired lately.",
+      "startMs": 3626,
+      "endMs": 6590
+    },
+    {
+      "speaker": "C",
+      "text": "She has not been sleeping well either.",
+      "startMs": 7190,
+      "endMs": 9310
+    },
+    {
+      "speaker": "A",
+      "text": "How many hours do you sleep each night?",
+      "startMs": 10010,
+      "endMs": 12268
+    },
+    {
+      "speaker": "B",
+      "text": "Maybe four or five hours.",
+      "startMs": 12868,
+      "endMs": 14382
+    },
+    {
+      "speaker": "C",
+      "text": "And she wakes up coughing.",
+      "startMs": 14882,
+      "endMs": 16439
+    },
+    {
+      "speaker": "A",
+      "text": "I will order a sleep study.",
+      "startMs": 17039,
+      "endMs": 18611
+    }
+  ]
+}

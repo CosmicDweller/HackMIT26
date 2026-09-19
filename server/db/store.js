@@ -51,6 +51,43 @@ const MIGRATIONS = [
   `,
   // 2: record which speech engine produced each transcript (auditability: did audio leave the machine?)
   `ALTER TABLE transcriptions ADD COLUMN engine TEXT NOT NULL DEFAULT 'local' CHECK (engine IN ('local', 'deepgram'));`,
+  // 3: provider-backed transcripts and the durable job queue.
+  //  - diarization_result: completed | partial | failed (the contract's diarizationStatus)
+  //  - provider_meta: INTERNAL JSON (request id, model, diarizer version, processing time). Never returned by the API.
+  //  - warnings: JSON array of notices for the doctor (for example a fallback model was used)
+  //  - segments: needs_review flag, the provider's own speaker index, and confidence values
+  //  - transcription_jobs: persistent job state; audio_path is a file-backed upload kept until the job
+  //    completes (or its retention deadline passes) so failed jobs can be retried without re-uploading.
+  `
+  ALTER TABLE transcriptions ADD COLUMN diarization_result TEXT CHECK (diarization_result IN ('completed', 'partial', 'failed'));
+  ALTER TABLE transcriptions ADD COLUMN provider_meta TEXT;
+  ALTER TABLE transcriptions ADD COLUMN warnings TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE segments ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE segments ADD COLUMN provider_speaker INTEGER;
+  ALTER TABLE segments ADD COLUMN confidence REAL;
+  ALTER TABLE segments ADD COLUMN speaker_confidence REAL;
+  CREATE TABLE transcription_jobs (
+    id                  TEXT PRIMARY KEY,
+    owner_id            TEXT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    status              TEXT NOT NULL CHECK (status IN ('queued', 'uploading', 'preparing', 'transcribing', 'completed', 'failed')),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    audio_path          TEXT,
+    audio_bytes         INTEGER,
+    expected_speakers   INTEGER,
+    duration_seconds    REAL,
+    mode                TEXT CHECK (mode IN ('sync', 'callback', 'local')),
+    provider_request_id TEXT,
+    callback_secret_hash TEXT,
+    transcription_id    TEXT REFERENCES transcriptions(id) ON DELETE SET NULL,
+    error_code          TEXT,
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    submitted_at        TEXT,
+    expires_at          TEXT
+  );
+  CREATE INDEX transcription_jobs_owner ON transcription_jobs (owner_id, created_at DESC);
+  CREATE INDEX transcription_jobs_status ON transcription_jobs (status);
+  `,
 ];
 
 export function openStore(dbPath) {
@@ -86,13 +123,31 @@ export function openStore(dbPath) {
        ON CONFLICT (id) DO UPDATE SET email = excluded.email, display_name = excluded.display_name`,
     ),
     insertTranscription: db.prepare(
-      `INSERT INTO transcriptions (id, owner_id, created_at, duration_seconds, text, diarization_status, speaker_count, engine)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transcriptions (id, owner_id, created_at, duration_seconds, text, diarization_status, speaker_count, engine,
+                                   diarization_result, provider_meta, warnings)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
     insertSpeaker: db.prepare("INSERT INTO speakers (transcription_id, id, label, role) VALUES (?, ?, ?, ?)"),
     insertSegment: db.prepare(
-      `INSERT INTO segments (transcription_id, id, seq, speaker_id, start_ms, end_ms, text) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO segments (transcription_id, id, seq, speaker_id, start_ms, end_ms, text,
+                            needs_review, provider_speaker, confidence, speaker_confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
+    // Jobs. Owner-scoped variants are used by the API; the unscoped ones only by the worker/callback.
+    insertJob: db.prepare(
+      `INSERT INTO transcription_jobs (id, owner_id, status, created_at, updated_at, audio_path, audio_bytes, expected_speakers, expires_at)
+       VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
+    ),
+    jobOwned: db.prepare("SELECT * FROM transcription_jobs WHERE id = ? AND owner_id = ?"),
+    jobById: db.prepare("SELECT * FROM transcription_jobs WHERE id = ?"),
+    jobList: db.prepare("SELECT * FROM transcription_jobs WHERE owner_id = ? ORDER BY created_at DESC, id DESC LIMIT 50"),
+    jobsByStatus: db.prepare("SELECT * FROM transcription_jobs WHERE status IN (SELECT value FROM json_each(?))"),
+    jobDelete: db.prepare("DELETE FROM transcription_jobs WHERE id = ? AND owner_id = ?"),
+    jobFinish: db.prepare(
+      `UPDATE transcription_jobs SET status = 'completed', transcription_id = ?, audio_path = NULL, error_code = NULL, updated_at = ?
+       WHERE id = ? AND owner_id = ?`,
+    ),
+    jobsExpired: db.prepare("SELECT * FROM transcription_jobs WHERE expires_at IS NOT NULL AND expires_at < ?"),
     // Every read/write below is scoped by owner_id. Never query by id alone.
     owned: db.prepare("SELECT * FROM transcriptions WHERE id = ? AND owner_id = ?"),
     list: db.prepare(
@@ -101,14 +156,15 @@ export function openStore(dbPath) {
     ),
     speakers: db.prepare("SELECT id, label, role FROM speakers WHERE transcription_id = ? ORDER BY rowid"),
     segments: db.prepare(
-      "SELECT id, start_ms, end_ms, text, speaker_id FROM segments WHERE transcription_id = ? ORDER BY seq",
+      "SELECT id, start_ms, end_ms, text, speaker_id, needs_review FROM segments WHERE transcription_id = ? ORDER BY seq",
     ),
     remove: db.prepare("DELETE FROM transcriptions WHERE id = ? AND owner_id = ?"),
     setRole: db.prepare("UPDATE speakers SET role = ? WHERE transcription_id = ? AND id = ?"),
     speakerExists: db.prepare("SELECT 1 AS ok FROM speakers WHERE transcription_id = ? AND id = ?"),
     segmentExists: db.prepare("SELECT 1 AS ok FROM segments WHERE transcription_id = ? AND id = ?"),
-    setSegmentText: db.prepare("UPDATE segments SET text = ? WHERE transcription_id = ? AND id = ?"),
-    setSegmentSpeaker: db.prepare("UPDATE segments SET speaker_id = ? WHERE transcription_id = ? AND id = ?"),
+    // Editing a segment is a human review of it, so its needs_review flag is cleared.
+    setSegmentText: db.prepare("UPDATE segments SET text = ?, needs_review = 0 WHERE transcription_id = ? AND id = ?"),
+    setSegmentSpeaker: db.prepare("UPDATE segments SET speaker_id = ?, needs_review = 0 WHERE transcription_id = ? AND id = ?"),
     setText: db.prepare("UPDATE transcriptions SET text = ? WHERE id = ? AND owner_id = ?"),
     setReview: db.prepare("UPDATE transcriptions SET review_status = ? WHERE id = ? AND owner_id = ?"),
   };
@@ -131,12 +187,17 @@ export function openStore(dbPath) {
     if (!row) throw notFound();
     return {
       id: row.id,
+      status: "completed", // a transcription resource exists only once processing has finished
       text: row.text,
       durationSeconds: row.duration_seconds,
       createdAt: row.created_at,
       reviewStatus: row.review_status,
       engine: row.engine,
+      // diarization.status is the original field (kept for existing clients); diarizationStatus is the
+      // provider-neutral one: completed | partial | failed.
+      diarizationStatus: row.diarization_result ?? { ok: "completed", failed: "failed", unavailable: "failed" }[row.diarization_status],
       diarization: { status: row.diarization_status, speakerCount: row.speaker_count },
+      warnings: JSON.parse(row.warnings ?? "[]"),
       speakers: q.speakers.all(row.id).map(({ id: speakerId, label, role }) => ({ id: speakerId, label, role })),
       segments: q.segments.all(row.id).map((segment) => ({
         id: segment.id,
@@ -144,11 +205,32 @@ export function openStore(dbPath) {
         endMs: segment.end_ms,
         text: segment.text,
         speakerId: segment.speaker_id,
+        needsReview: Boolean(segment.needs_review),
       })),
     };
   }
 
   const joinText = (segments) => segments.map((segment) => segment.text).join(" ");
+
+  /** Insert a transcription with its speakers and segments. Call inside a transaction. Returns its id. */
+  function insertTranscription(
+    ownerId,
+    { durationSeconds, diarizationStatus, diarizationResult = null, speakers, segments, engine = "local", providerMeta = null, warnings = [] },
+  ) {
+    const id = `tr_${randomUUID()}`;
+    q.insertTranscription.run(
+      id, ownerId, new Date().toISOString(), durationSeconds ?? null, joinText(segments), diarizationStatus, speakers.length, engine,
+      diarizationResult, providerMeta ? JSON.stringify(providerMeta) : null, JSON.stringify(warnings),
+    );
+    for (const speaker of speakers) q.insertSpeaker.run(id, speaker.id, speaker.label, speaker.role);
+    segments.forEach((segment, index) =>
+      q.insertSegment.run(
+        id, segment.id, index, segment.speakerId, segment.startMs, segment.endMs, segment.text,
+        segment.needsReview ? 1 : 0, segment.providerSpeaker ?? null, segment.confidence ?? null, segment.speakerConfidence ?? null,
+      ),
+    );
+    return id;
+  }
 
   return {
     close: () => db.close(),
@@ -157,18 +239,52 @@ export function openStore(dbPath) {
       q.upsertDoctor.run(id, email ?? null, displayName ?? null, new Date().toISOString());
     },
 
-    createTranscription(ownerId, { durationSeconds, diarizationStatus, speakers, segments, engine = "local" }) {
-      const id = `tr_${randomUUID()}`;
-      transaction(() => {
-        q.insertTranscription.run(
-          id, ownerId, new Date().toISOString(), durationSeconds ?? null, joinText(segments), diarizationStatus, speakers.length, engine,
-        );
-        for (const speaker of speakers) q.insertSpeaker.run(id, speaker.id, speaker.label, speaker.role);
-        segments.forEach((segment, index) =>
-          q.insertSegment.run(id, segment.id, index, segment.speakerId, segment.startMs, segment.endMs, segment.text),
-        );
+    createTranscription(ownerId, data) {
+      return transaction(() => load(ownerId, insertTranscription(ownerId, data)));
+    },
+
+    /** The internal provider metadata (request id, model, diarizer version). Never sent to clients. */
+    providerMeta(ownerId, id) {
+      load(ownerId, id); // ownership check
+      return JSON.parse(q.owned.get(String(id), ownerId).provider_meta ?? "null");
+    },
+
+    // ---- jobs ------------------------------------------------------------------------------
+    createJob(ownerId, { audioPath, audioBytes, expectedSpeakers = null, expiresAt }) {
+      const id = `job_${randomUUID()}`;
+      const now = new Date().toISOString();
+      q.insertJob.run(id, ownerId, now, now, audioPath, audioBytes, expectedSpeakers, expiresAt ?? null);
+      return q.jobById.get(id);
+    },
+    getJob(ownerId, id) {
+      const job = q.jobOwned.get(String(id), ownerId);
+      if (!job) throw notFound();
+      return job;
+    },
+    listJobs: (ownerId) => q.jobList.all(ownerId),
+    /** Worker/callback use only: no owner scoping. */
+    jobById: (id) => q.jobById.get(String(id)) ?? null,
+    jobsInStatus: (statuses) => q.jobsByStatus.all(JSON.stringify(statuses)),
+    expiredJobs: (nowIso) => q.jobsExpired.all(nowIso),
+    updateJob(id, fields) {
+      const columns = Object.keys(fields);
+      const allowed = ["status", "audio_path", "duration_seconds", "mode", "provider_request_id", "callback_secret_hash",
+        "transcription_id", "error_code", "attempts", "submitted_at", "expires_at"];
+      if (columns.length === 0 || columns.some((column) => !allowed.includes(column))) throw new Error("invalid job update");
+      db.prepare(`UPDATE transcription_jobs SET ${columns.map((column) => `${column} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+        .run(...columns.map((column) => fields[column]), new Date().toISOString(), String(id));
+      return q.jobById.get(String(id));
+    },
+    deleteJob(ownerId, id) {
+      if (q.jobDelete.run(String(id), ownerId).changes === 0) throw notFound();
+    },
+    /** Save the transcript and finish its job in one transaction (so a crash cannot leave one without the other). */
+    completeJob(ownerId, jobId, data) {
+      return transaction(() => {
+        const transcriptionId = insertTranscription(ownerId, data);
+        q.jobFinish.run(transcriptionId, new Date().toISOString(), String(jobId), ownerId);
+        return load(ownerId, transcriptionId);
       });
-      return load(ownerId, id);
     },
 
     list(ownerId) {
