@@ -1,0 +1,33 @@
+{
+  "voices": {
+    "A": "Daniel",
+    "B": "Samantha"
+  },
+  "durationMs": 9298,
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Good morning. What brings you in today?",
+      "startMs": 300,
+      "endMs": 2706
+    },
+    {
+      "speaker": "A",
+      "text": "Are you eating regularly?",
+      "startMs": 3306,
+      "endMs": 4585
+    },
+    {
+      "speaker": "A",
+      "text": "Any fever?",
+      "startMs": 5085,
+      "endMs": 5809
+    },
+    {
+      "speaker": "A",
+      "text": "Thank you. I will order a blood test.",
+      "startMs": 6409,
+      "endMs": 8898
+    }
+  ]
+}

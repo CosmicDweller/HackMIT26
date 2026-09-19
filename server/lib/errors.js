@@ -27,3 +27,10 @@ export const serviceUnavailable = (message = "Transcription is temporarily unava
 
 /** The client disconnected before we finished. No response is sent; this only unwinds the job. */
 export const requestCancelled = () => new AppError("TRANSCRIPTION_FAILED", 499, "Request cancelled.");
+
+export const unauthenticated = (message = "Sign in to continue.") => new AppError("UNAUTHENTICATED", 401, message);
+
+/** Also returned for another doctor's data, so ids cannot be probed for existence. */
+export const notFound = (message = "Not found.") => new AppError("NOT_FOUND", 404, message);
+
+export const invalidRequest = (message = "The request is not valid.") => new AppError("INVALID_REQUEST", 400, message);

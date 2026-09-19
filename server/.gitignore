@@ -7,7 +7,19 @@ models/*
 tmp/
 *.wav
 !tests/fixtures/*.wav
+!tests/fixtures/synthetic/*.wav
 *.webm
 *.m4a
 *.mp3
 *.ogg
+
+# Diarization: Python venv and downloaded models
+diarization/.venv/
+diarization/models/
+__pycache__/
+
+# Local transcript database (may contain transcripts; never commit)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
