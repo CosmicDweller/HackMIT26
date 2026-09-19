@@ -62,7 +62,12 @@ export function TranscriptSegmentRow({
   const color = segment.speakerId ? speakerColor(speakerIndex.get(segment.speakerId) ?? 0) : null;
 
   return (
-    <div className="space-y-1.5 rounded-lg border border-border p-3">
+    <div
+      className={cn(
+        "space-y-1.5 rounded-lg border p-3",
+        segment.needsReview ? "border-amber-300 dark:border-amber-800" : "border-border",
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
         {segment.speakerId ? (
           <span
@@ -83,6 +88,12 @@ export function TranscriptSegmentRow({
         <span className="text-xs text-muted-foreground">
           {formatSeconds(segment.startMs / 1000)}
         </span>
+        {segment.needsReview && (
+          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <AlertTriangle className="size-3" />
+            Review
+          </span>
+        )}
 
         <select
           value={segment.speakerId ?? ""}

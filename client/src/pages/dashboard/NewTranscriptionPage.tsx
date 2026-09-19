@@ -1,26 +1,43 @@
-import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AudioPreview } from "@/components/AudioPreview";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { JobProgress } from "@/components/JobProgress";
 import { ModeToggle } from "@/components/ModeToggle";
 import { RecordPanel } from "@/components/RecordPanel";
-import { TranscribingState } from "@/components/TranscribingState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UploadPanel } from "@/components/UploadPanel";
 import { useAudioCapture } from "@/hooks/useAudioCapture";
-import { useCreateTranscription } from "@/hooks/useCreateTranscription";
+import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { MAX_JOB_UPLOAD_BYTES } from "@/lib/limits";
 import { USE_MOCK_TRANSCRIPTIONS } from "@/services/transcriptions/transcriptionsService";
 import type { AppState } from "@/types";
 
 export function NewTranscriptionPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const resumeJobId = searchParams.get("jobId");
   const { mode, setMode, audio, recorder, handleAudioReady, discardAudio, isRecording } =
     useAudioCapture();
-  const { creating, error, create, reset } = useCreateTranscription();
+  const { job, uploading, error, start, retry, resume, reset } = useTranscriptionJob();
 
-  const appState: AppState = error
+  // Reopening an in-progress job from the dashboard, rather than starting a new recording.
+  useEffect(() => {
+    if (resumeJobId) resume(resumeJobId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeJobId]);
+
+  useEffect(() => {
+    if (job?.status === "completed" && job.transcriptionId) {
+      navigate(`/dashboard/transcripts/${job.transcriptionId}`);
+    }
+  }, [job, navigate]);
+
+  const processing = uploading || (job != null && job.status !== "failed");
+
+  const appState: AppState = error || job?.status === "failed"
     ? "error"
-    : creating
+    : processing
       ? "transcribing"
       : audio
         ? "audio-ready"
@@ -31,14 +48,19 @@ export function NewTranscriptionPage() {
   const startOver = useCallback(() => {
     discardAudio();
     reset();
-  }, [discardAudio, reset]);
+    if (resumeJobId) navigate("/dashboard/new", { replace: true });
+  }, [discardAudio, reset, resumeJobId, navigate]);
 
-  const runTranscribe = useCallback(async () => {
+  const runTranscribe = useCallback(() => {
     if (!audio) return;
     // A consultation is doctor + patient by default; helps the backend's speaker counting.
-    const result = await create(audio.blob, audio.fileName, 2);
-    if (result) navigate(`/dashboard/transcripts/${result.id}`);
-  }, [audio, create, navigate]);
+    start(audio.blob, audio.fileName, 2);
+  }, [audio, start]);
+
+  const handleRetry = useCallback(() => {
+    if (job?.status === "failed") retry();
+    else runTranscribe();
+  }, [job, retry, runTranscribe]);
 
   return (
     <div className="mx-auto max-w-lg">
@@ -66,16 +88,16 @@ export function NewTranscriptionPage() {
             Deepgram"); this app is not HIPAA-compliant.
           </p>
 
-          {appState === "error" && error && (
+          {appState === "error" && (
             <ErrorBanner
-              code={error.code}
-              message={error.message}
-              onRetry={runTranscribe}
+              code={job?.error?.code ?? error?.code ?? "SERVER_ERROR"}
+              message={job?.error?.message ?? error?.message ?? "Something went wrong."}
+              onRetry={handleRetry}
               onStartOver={startOver}
             />
           )}
 
-          {appState === "transcribing" && <TranscribingState />}
+          {appState === "transcribing" && <JobProgress uploading={uploading} job={job} />}
 
           {appState === "audio-ready" && audio && (
             <AudioPreview audio={audio} onTranscribe={runTranscribe} onDiscard={discardAudio} />
@@ -97,7 +119,7 @@ export function NewTranscriptionPage() {
                   onStop={recorder.stop}
                 />
               ) : (
-                <UploadPanel onSelected={handleAudioReady} />
+                <UploadPanel onSelected={handleAudioReady} maxFileBytes={MAX_JOB_UPLOAD_BYTES} />
               )}
             </>
           )}

@@ -1,58 +1,18 @@
-import { authProvider } from "@/services/auth";
 import { TranscribeApiError } from "@/services/transcribeApi";
 import type { TranscriptionsApi } from "@/services/transcriptions/transcriptionsApiTypes";
 import {
-  FIXTURE_SEGMENTS,
-  FIXTURE_SPEAKERS,
-  fixtureFullText,
-} from "@/lib/transcriptionFixtures";
-import type { Transcription } from "@/types";
+  createMockTranscription,
+  delay,
+  requireOwned,
+  requireUserId,
+  store,
+  toPublic,
+} from "@/services/transcriptions/mockTranscriptionsStore";
 
 /**
  * MOCK transcriptions backend, matching the agreed contract (docs/API_CONTRACT.md
- * v2 on branch lz). Never analyzes the actual uploaded audio; every transcript
- * is the same clearly-labeled synthetic fixture, so this can never be mistaken
- * for a real diarization result. In-memory only — nothing is written to
- * localStorage, and it resets on page reload. Disable via
- * VITE_USE_MOCK_TRANSCRIPTIONS=false.
+ * v2/v3 on branch lz). Disable via VITE_USE_MOCK_TRANSCRIPTIONS=false.
  */
-
-interface StoredTranscription extends Transcription {
-  ownerId: string;
-}
-
-const store = new Map<string, StoredTranscription>();
-
-function delay<T>(value: T, ms = 900): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
-async function requireUserId(): Promise<string> {
-  const session = await authProvider.getSession();
-  if (!session) {
-    throw new TranscribeApiError({
-      error: "You must be signed in.",
-      code: "UNAUTHENTICATED",
-    });
-  }
-  return session.id;
-}
-
-function toPublic(record: StoredTranscription): Transcription {
-  const { ownerId: _ownerId, ...rest } = record;
-  return structuredClone(rest);
-}
-
-async function requireOwned(id: string, userId: string): Promise<StoredTranscription> {
-  const record = store.get(id);
-  if (!record || record.ownerId !== userId) {
-    throw new TranscribeApiError({
-      error: "Transcript not found.",
-      code: "NOT_FOUND",
-    });
-  }
-  return record;
-}
 
 export const mockTranscriptionsApi: TranscriptionsApi = {
   async create(audio) {
@@ -61,23 +21,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       throw new TranscribeApiError({ error: "The audio is empty.", code: "INVALID_AUDIO" });
     }
     await delay(undefined, 1800);
-
-    const id = crypto.randomUUID();
-    // reviewStatus only ever changes via the explicit review() action below —
-    // never derived from speaker/segment edits, matching the real backend.
-    const base: Transcription = {
-      id,
-      text: fixtureFullText(),
-      durationSeconds: 38.5,
-      reviewStatus: "needs_review",
-      createdAt: new Date().toISOString(),
-      engine: "local",
-      speakers: structuredClone(FIXTURE_SPEAKERS),
-      segments: structuredClone(FIXTURE_SEGMENTS),
-      diarization: { status: "ok", speakerCount: FIXTURE_SPEAKERS.length },
-    };
-    store.set(id, { ...base, ownerId });
-    return toPublic(store.get(id)!);
+    return createMockTranscription(ownerId);
   },
 
   async list() {
@@ -129,6 +73,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
     }
     segment.text = patch.text;
     segment.speakerId = patch.speakerId;
+    segment.needsReview = false;
     record.text = record.segments.map((s) => s.text).join(" ");
     return toPublic(record);
   },

@@ -1,8 +1,9 @@
-import { FilePlus2 } from "lucide-react";
+import { FilePlus2, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ReviewStatusBadge } from "@/components/dashboard/ReviewStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useActiveJobs } from "@/hooks/useActiveJobs";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranscriptionList } from "@/hooks/useTranscriptionList";
 import { formatDate, formatSeconds } from "@/lib/format";
@@ -10,6 +11,7 @@ import { formatDate, formatSeconds } from "@/lib/format";
 export function DashboardHomePage() {
   const { user } = useAuth();
   const { items, error } = useTranscriptionList();
+  const activeJobs = useActiveJobs();
   const recent = items?.slice(0, 5) ?? [];
 
   return (
@@ -28,6 +30,29 @@ export function DashboardHomePage() {
           New transcription
         </Button>
       </div>
+
+      {activeJobs != null && activeJobs.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Processing</h2>
+          <div className="space-y-2">
+            {activeJobs.map((job) => (
+              <Link key={job.jobId} to={`/dashboard/new?jobId=${job.jobId}`}>
+                <Card className="transition-colors hover:bg-muted/50">
+                  <CardContent className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      <p className="text-sm font-medium">
+                        {job.createdAt ? formatDate(job.createdAt) : "New recording"}
+                      </p>
+                    </div>
+                    <span className="text-xs capitalize text-muted-foreground">{job.status}</span>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Recent transcripts</h2>

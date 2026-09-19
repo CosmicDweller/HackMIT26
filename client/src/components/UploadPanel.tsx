@@ -4,11 +4,13 @@ import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AudioAsset } from "@/types";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB — the legacy /api/transcribe limit
 const ACCEPTED_EXTENSIONS = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".flac"];
 
 interface UploadPanelProps {
   onSelected: (asset: AudioAsset) => void;
+  /** Defaults to 10 MB (the legacy sync endpoint's limit). Pass the job endpoint's 1 GiB where used. */
+  maxFileBytes?: number;
 }
 
 function isLikelyAudioFile(file: File): boolean {
@@ -17,7 +19,7 @@ function isLikelyAudioFile(file: File): boolean {
   return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-export function UploadPanel({ onSelected }: UploadPanelProps) {
+export function UploadPanel({ onSelected, maxFileBytes = DEFAULT_MAX_FILE_BYTES }: UploadPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,8 +33,8 @@ export function UploadPanel({ onSelected }: UploadPanelProps) {
         setError("That file doesn't look like an audio file. Try MP3, WAV, M4A, OGG, WEBM, or FLAC.");
         return;
       }
-      if (file.size > MAX_FILE_BYTES) {
-        setError(`File is too large (${formatBytes(file.size)}). Maximum size is 10 MB.`);
+      if (file.size > maxFileBytes) {
+        setError(`File is too large (${formatBytes(file.size)}). Maximum size is ${formatBytes(maxFileBytes)}.`);
         return;
       }
       if (file.size === 0) {
@@ -48,7 +50,7 @@ export function UploadPanel({ onSelected }: UploadPanelProps) {
         url: URL.createObjectURL(file),
       });
     },
-    [onSelected],
+    [onSelected, maxFileBytes],
   );
 
   return (
@@ -83,7 +85,7 @@ export function UploadPanel({ onSelected }: UploadPanelProps) {
           <span className="text-muted-foreground"> or drag and drop</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          MP3, WAV, M4A, OGG, WEBM, FLAC — up to 10 MB
+          MP3, WAV, M4A, OGG, WEBM, FLAC — up to {formatBytes(maxFileBytes)}
         </p>
         <input
           ref={inputRef}

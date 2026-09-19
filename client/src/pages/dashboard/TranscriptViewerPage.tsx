@@ -10,6 +10,21 @@ import { useTranscriptionEditor } from "@/hooks/useTranscriptionEditor";
 import { downloadTextFile, formatTranscriptForExport } from "@/lib/exportTranscript";
 import { formatDate } from "@/lib/format";
 import { transcriptions } from "@/services/transcriptions/transcriptionsService";
+import type { Transcription } from "@/types";
+
+// Prefer v3's diarizationStatus (distinguishes "partial") when present, falling
+// back to the v2 diarization.status the backend keeps for older clients.
+function diarizationOk(t: Transcription): boolean {
+  return t.diarizationStatus ? t.diarizationStatus === "completed" : t.diarization.status === "ok";
+}
+
+function diarizationMessage(t: Transcription): string {
+  if (t.diarizationStatus === "partial") return "Speaker detection labelled only part of this recording";
+  if (t.diarizationStatus === "failed" || t.diarization.status === "failed") {
+    return "Speaker detection failed";
+  }
+  return "Speaker detection was unavailable";
+}
 
 export function TranscriptViewerPage() {
   const { id } = useParams<{ id: string }>();
@@ -125,15 +140,7 @@ export function TranscriptViewerPage() {
         </p>
       )}
 
-      {transcription.diarization.status !== "ok" ? (
-        <p className="flex items-center gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          <AlertTriangle className="size-3.5 shrink-0" />
-          Speaker detection {transcription.diarization.status === "unavailable"
-            ? "was unavailable"
-            : "failed"}{" "}
-          for this recording — assign speakers to segments manually below.
-        </p>
-      ) : (
+      {diarizationOk(transcription) ? (
         transcription.speakers.length > 0 && (
           <SpeakerMappingPanel
             speakers={transcription.speakers}
@@ -141,6 +148,25 @@ export function TranscriptViewerPage() {
             onChangeRole={updateSpeakerRole}
           />
         )
+      ) : (
+        <p className="flex items-center gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          {diarizationMessage(transcription)} — assign speakers to segments manually below.
+        </p>
+      )}
+
+      {transcription.warnings && transcription.warnings.length > 0 && (
+        <div className="space-y-1.5">
+          {transcription.warnings.map((warning, i) => (
+            <p
+              key={i}
+              className="flex items-start gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+            >
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {warning.message}
+            </p>
+          ))}
+        </div>
       )}
 
       {saveError && <p className="text-sm text-destructive">{saveError}</p>}

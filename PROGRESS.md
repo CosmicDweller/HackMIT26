@@ -1,59 +1,69 @@
 # Progress
 
 ## Current milestone
-**Full stack verified end-to-end against the real backend** (previous
-entry), plus frontend prep for the Deepgram Nova-3 Medical migration
-(2-hour recordings, 3+ speaker support). The big pieces of that migration —
-async job workflow and chunked/resumable upload — need new backend
-endpoints that don't exist yet; proposed on issue #3 rather than built
-against invented ones. See "Deepgram migration" below.
+**Deepgram/job-system migration (Contract v3) is built and verified against
+the real, merged backend.** Backend delivered the whole thing in one pass
+(job endpoints, 2h/1GiB recordings, `warnings`, `needsReview`,
+`diarizationStatus`) — ahead of the coordination proposal below, so the
+client caught up to match rather than the other way around.
 
-## Deepgram migration (in progress, coordinating with backend)
-Requirements: Nova-3 Medical, Batch Diarization v2, up to 2-hour recordings,
-3+ speaker support, async processing. Posted a coordination proposal on
-issue #3 covering what only the backend can do: raised upload/duration
-limits (current contract caps at 10 MB / 60 s — a 2-hour recording won't
-fit), an async job workflow (`POST` returns a job id immediately; frontend
-polls `queued|uploading|preparing|transcribing|completed|failed` until
-done), and chunked/resumable upload. Proposed keeping the current
-`speaker_N`/`diarization.status` vocabulary (already implemented, already
-verified against real data) rather than switching to the prompt's
-`speaker_0`-indexed / `diarizationStatus` naming, since the client already
-treats speaker ids as opaque strings — asked backend to confirm or push
-back.
+## Deepgram migration — done
+Client now uses `POST /api/transcription-jobs` (not the old synchronous
+route) for new-transcription, with real polling
+(`queued|preparing|uploading|transcribing|completed|failed`) and
+stage-specific copy ("Uploading recording…", "Preparing audio…",
+"Transcribing with Deepgram…", "Finalizing transcript…"). Built:
+- `services/transcriptions/jobsApi.ts` (+ `mockJobsApi.ts` behind
+  `VITE_USE_MOCK_TRANSCRIPTIONS`, simulating the same staged timing) and
+  `hooks/useTranscriptionJob.ts` (create, poll, retry, resume).
+- `POST .../:jobId/retry` wired to the failure screen's Retry button;
+  `GET /api/transcription-jobs` surfaced as a "Processing" section on the
+  dashboard so a doctor can reopen an unfinished job after navigating away
+  (`/dashboard/new?jobId=...` resumes polling) — "do not pretend an
+  unfinished job is complete" is satisfied by literally showing the real
+  status, not a guess.
+- `ErrorBanner` widened to accept any error code (not just the fixed REST
+  `ErrorCode` union) with friendly labels for all documented job error
+  codes (`RECORDING_TOO_LONG`, `PROVIDER_TIMEOUT`, etc.) — unrecognized
+  future codes still degrade gracefully.
+- `Transcription.warnings[]` (e.g. `MINOR_SPEAKER_DETECTED`) and per-segment
+  `needsReview` now render — an amber banner and a segment-level "Review"
+  badge respectively, advisory only, never presented as verified.
+- Upload size limit raised from 10 MB to 1 GiB for the new-transcription
+  flow specifically (`UploadPanel`'s limit is now a prop; the legacy
+  quick-transcribe page keeps its original 10 MB against the unchanged
+  `/api/transcribe`).
+- Recording duration bumped 60s → 7200s (2h), `HH:MM:SS` clock, warning in
+  the last 5 minutes, "keep this tab open" notice, mic/track-interruption
+  handling that preserves whatever was captured.
+- 3+ speaker support confirmed with no hardcoded 2-speaker assumption —
+  the shared mock fixture now has a third speaker (a nurse stepping in),
+  permanently, with a `needsReview`/`MINOR_SPEAKER_DETECTED` demo mirroring
+  what the backend actually observed on a real 2-hour recording.
 
-**Built now, independent of the above (backward compatible, no backend
-change needed):**
-- Recording duration bumped from 60s to 7200s (2 hours). Timer switched to
-  a proper `HH:MM:SS` clock (`lib/format.ts`: `formatClock`), with a
-  warning banner in the last 5 minutes and a "keep this tab open / computer
-  awake" notice while recording. Elapsed time was already computed from
-  wall-clock `Date.now()` deltas (not tick-counting), so no drift-related
-  change was needed there.
-- Mic/track interruption handling: if the microphone track ends
-  unexpectedly (unplugged, OS revoked permission, etc.), recording stops
-  gracefully and whatever was captured so far is preserved and surfaced to
-  the user, rather than silently losing it or crashing.
-- Verified 3+ speaker support has no hardcoded 2-speaker assumption —
-  extended the shared mock fixture with a third speaker (a nurse stepping
-  in briefly) rather than a throwaway test, so it's a permanent, realistic
-  demonstration. Rendered correctly: distinct color per speaker, correct
-  per-segment attribution, independent role mapping per speaker.
-- Null `speakerId` now displays exactly "Unknown speaker" (was "Speaker
-  unclear"), matching the spec's wording, in both the transcript view and
-  the `.txt` export.
-- Consent reminder on the new-transcription page now also notes that audio
-  may be processed by an external speech-recognition provider depending on
-  backend configuration, and restates the app is not HIPAA-compliant.
+**Real bug found and fixed via this integration testing:** the shared
+`apiRequest` helper's success/failure heuristic checked `"error" in
+payload`, but a *successful* job response legitimately has an `error` key
+(`null` when nothing failed) — so every successful job creation was being
+misread as a failure ("SERVER ERROR / null"). Fixed to trust the HTTP
+status code only (`services/transcriptions/apiClient.ts`), which is what
+the contract actually specifies.
 
-**Deliberately not built yet** (would require inventing an API the backend
-hasn't designed, which the brief explicitly warns against): chunked/
-resumable upload, async job-status polling UI, and the automated test
-suite for job-workflow scenarios (queued/uploading/preparing/transcribing,
-upload interruption/recovery). Once the backend lands real endpoints for
-these, building and verifying them for real (same pattern as the v2
-diarization work) is fast — the slow part was always waiting for a stable
-contract to build against, not the UI work itself.
+**Verified for real** (not mocks): `STT_ENGINE=local` (no Deepgram key
+available in this session — flagged below), real job creation → real
+polling → real completion → real `tr_<uuid>` transcript with correct
+diarization, through the new job endpoint end to end, zero console errors,
+clean server logs throughout.
+
+**Not yet verified:** the actual Deepgram engine (needs `DEEPGRAM_API_KEY`,
+which wasn't available this session — only Supabase credentials were
+shared). Everything was tested against the `local` whisper.cpp fallback via
+the *same* job endpoints Deepgram uses, so the client-side job/polling
+mechanics are proven; only the Deepgram-specific response shape (`engine:
+"deepgram"`, real `warnings`/`needsReview` from real Deepgram data) is
+unverified. Chunked upload was explicitly *not* built — the backend
+recommended against it (single multipart POST is reliable on localhost)
+and the frontend agreed on issue #3.
 
 ## Completed features
 - Original single-speaker quick-transcribe flow (`/`) preserved unchanged —
@@ -104,11 +114,16 @@ With the client pointed at it for real:
 - Zero console errors at any step of the whole session.
 
 ## Remaining prioritized tasks
-1. Mobile-width layout not manually verified (browser automation here
+1. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
+   (tested via the local fallback through the same job endpoints so far).
+2. Automated test suite (Playwright/Vitest) for the scenarios in the brief
+   — deferred until now because the job-workflow contract was still
+   changing; it's stable now, so this is a reasonable next step.
+3. Mobile-width layout not manually verified (browser automation here
    can't reliably resize the viewport).
-2. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
+4. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
    per backend's plan, since Vercel can't run whisper.cpp).
-3. Optional: surface `GET /api/me` somewhere (not required by any current
+5. Optional: surface `GET /api/me` somewhere (not required by any current
    screen).
 
 ## Architectural decisions
@@ -123,17 +138,22 @@ With the client pointed at it for real:
 
 ## Known bugs and blockers
 - None currently. Both mock flags can stay `false` for local dev/demo as
-  long as `server/` is running with models set up.
+  long as `server/` is running with models set up. `server/.env` needs
+  `DEEPGRAM_API_KEY` for the real Deepgram engine — without it, set
+  `STT_ENGINE=local` to use the whisper.cpp fallback (what this session's
+  testing used).
 
 ## Test and deployment status
-- No automated tests on the client. Full manual pass against the real
-  backend today (see above) plus the earlier real-auth-only pass. Lint
-  (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment
-  yet.
+- No automated tests on the client. Full manual pass against the real,
+  merged v3 backend today (job creation, polling, completion, warnings,
+  needsReview, resume-unfinished-job) plus earlier real-auth and v2 passes.
+  Lint (`oxlint`) and build (`tsc -b && vite build`) both pass. No
+  deployment yet.
 
 ## Next specific action
-Decide on deployment: client to Vercel, backend to a machine that can run
-whisper.cpp + the diarization venv (per backend's tunnel plan).
+Get a Deepgram API key to verify the real engine, then decide on
+deployment: client to Vercel, backend to a machine that can run
+whisper.cpp/Deepgram + the diarization venv (per backend's tunnel plan).
 
 ## Backend status (lz)
 - v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
