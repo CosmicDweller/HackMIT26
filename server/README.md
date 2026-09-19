@@ -61,8 +61,8 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   call, with word-level speaker labels and confidences (so segments split exactly at speaker changes, and
   low-confidence runs stay `speakerId: null`). **This sends audio to a third party.** Every request sets
   `mip_opt_out=true`; on any Deepgram error or timeout the local engine is used instead (data stays local); the
-  public `/api/transcribe` never uses it; each transcript records its `engine`. It has only been tested against
-  a stub built from Deepgram's API reference (run the live test with `DEEPGRAM_API_KEY=... DEEPGRAM_LIVE_TEST=1 node --test tests/deepgram.test.js`;
+  public `/api/transcribe` never uses it; each transcript records its `engine`. Default model `nova-3-medical` (clinical vocabulary, English only). Automated tests use a stub built from
+  Deepgram's API reference, and the live service was verified with synthetic audio (`npm run check-deepgram`; run the live test with `DEEPGRAM_API_KEY=... DEEPGRAM_LIVE_TEST=1 node --test tests/deepgram.test.js`;
   it uploads synthetic audio only). Use synthetic data unless a BAA and the other approvals exist.
 - **Checking a real sign-in:** with `SUPABASE_URL` set, sign in through the app, copy the session's access token
   and run `pbpaste | npm run check-token`. It reads the token from stdin, verifies it exactly like the API does and

@@ -6,8 +6,8 @@ GitHub issue #3 before either side implements them.
 
 Status:
 - **v1** (`POST /api/transcribe`, `GET /api/health`): agreed and implemented. Unchanged.
-- **v2** (accounts, speaker-aware transcriptions, everything under "Contract v2" below): **proposed**,
-  posted to issue #3 for frontend agreement. Nothing in v2 changes v1.
+- **v2** (accounts, speaker-aware transcriptions, everything under "Contract v2" below): agreed with the
+  frontend on issue #3 and implemented.
 
 > This replaces the earlier placeholder text-to-speech contract (`POST /api/tts`), which
 > has been removed. This project does speech recognition, not speech synthesis.
@@ -68,14 +68,14 @@ when using `FormData`; the browser adds the multipart boundary.
 `error` is safe to show to the user. It never contains filesystem paths or
 environment details.
 
-| `code`                  | HTTP _(proposed)_ | When                                                                                              |
+| `code`                  | HTTP | When                                                                                              |
 | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
 | `INVALID_AUDIO`         | 400               | No `audio` field, empty file, undecodable audio, or audio longer than 60 seconds.                 |
 | `FILE_TOO_LARGE`        | 413               | Upload exceeds 10 MB.                                                                             |
 | `TRANSCRIPTION_FAILED`  | 500               | Inference failed, exceeded the 120 s timeout (504), or found no speech (422).                     |
 | `SERVICE_UNAVAILABLE`   | 503               | FFmpeg, the whisper.cpp executable, or the model is missing, or the server is at its concurrency limit. |
 
-Notes on the proposed HTTP statuses:
+Notes on the HTTP statuses (confirmed by the frontend on issue #3):
 
 - The frontend should branch on `code`, not on the HTTP status.
 - Silence / no recognizable speech returns `TRANSCRIPTION_FAILED` (422) with the message
@@ -83,7 +83,7 @@ Notes on the proposed HTTP statuses:
 - When the server is busy it returns `SERVICE_UNAVAILABLE` (503) with a `Retry-After`
   header; the client may retry.
 
-### Optional timestamps _(proposed, additive)_
+### Optional timestamps (additive)
 
 `POST /api/transcribe?segments=1` adds a `segments` array to the success response. Without
 the query parameter the response is exactly the shape above, so existing clients are unaffected.
@@ -109,9 +109,9 @@ Reports whether transcription can currently run (FFmpeg, whisper.cpp executable 
 model all found).
 
 - Ready: `200 OK`, `{ "status": "ok" }`
-- Not ready: `503 Service Unavailable` _(proposed status)_, `{ "status": "unavailable" }`
+- Not ready: `503 Service Unavailable` , `{ "status": "unavailable" }`
 
-## CORS _(proposed)_
+## CORS
 
 The backend allows cross-origin requests from `http://localhost:5173` (the Vite dev
 server) by default; configurable via `CORS_ORIGIN`. The frontend may instead use a Vite
@@ -139,9 +139,10 @@ const data = await res.json(); // { text, durationSeconds } or { error, code }
 
 ---
 
-# Contract v2 (proposed): doctor accounts and speaker-aware transcriptions
+# Contract v2: doctor accounts and speaker-aware transcriptions
 
-Everything below is **proposed** until the frontend agent confirms it on issue #3. v1 above is unchanged and
+Everything below was agreed with the frontend agent on issue #3 (list envelope, error codes, review endpoint,
+`expectedSpeakers`, `diarization.status`). Further changes need agreement there first. v1 above is unchanged and
 stays public (no authentication) so existing clients keep working.
 
 > **Prototype for synthetic data only.** Use synthetic conversations for tests and demos. Authentication does
@@ -333,7 +334,7 @@ alternating turns, including a one-word reply; a single speaker gives 1 speaker.
 
 ## Privacy and security
 
-- **Optional cloud engine.** If the backend is configured with `STT_ENGINE=deepgram`, audio from the authenticated
+- **Optional cloud engine.** If the backend is configured with `STT_ENGINE=deepgram` (model `nova-3-medical`), audio from the authenticated
   `POST /api/transcriptions` is sent to Deepgram (always with `mip_opt_out=true`) and transcripts record
   `engine: "deepgram"`. If Deepgram fails the local engine is used. The public `POST /api/transcribe` never
   uses it. The default is `local`.

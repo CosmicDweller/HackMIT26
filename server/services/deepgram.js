@@ -6,8 +6,9 @@
 // and the other approvals in docs/API_CONTRACT.md ("Privacy and security") are in place.
 //
 // The API key is read from the environment, never logged, and never returned to clients.
-// Request/response shapes follow Deepgram's pre-recorded API reference. They have been tested only
-// against a stub server built from that reference, not against the live service.
+// Request/response shapes follow Deepgram's pre-recorded API reference. Automated tests use a stub
+// server; the live service was also checked once with synthetic audio (`npm run check-deepgram`):
+// Deepgram reported model "medical-nova-3", diarization ran, and speakers came back correctly.
 import { readFile } from "node:fs/promises";
 import { requestCancelled, transcriptionFailed } from "../lib/errors.js";
 

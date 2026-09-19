@@ -62,11 +62,11 @@ then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
 
 ## Backend status (lz)
 - v1 (`POST /api/transcribe`, `GET /api/health`) is merged and unchanged. See `docs/API_CONTRACT.md`.
-- v2 (proposed on issue #3, on branch `lz`): speaker diarization (local sherpa-onnx), Supabase Auth JWT
+- v2 (agreed on issue #3): speaker diarization (local sherpa-onnx), Supabase Auth JWT
   verification, and per-doctor transcript storage (local SQLite) with speaker roles, segment corrections, history
   and deletion. 120 backend tests pass (1 live Deepgram test skipped without a key), including real diarization and a real end-to-end run on synthetic
   two-voice conversations (8/8 turns correct; overlapping speech is a known weak spot).
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor`.
-- Optional Deepgram cloud engine (STT_ENGINE=deepgram, off by default, tested only against a stub; sends audio to a third party).
+- Optional Deepgram cloud engine (STT_ENGINE=deepgram, model nova-3-medical, verified live with synthetic audio; sends audio to a third party).
 - Review confirmation (`POST /api/transcriptions/:id/review`) is implemented (frontend agreed on #3).
 - Not done / needs decisions: an end-to-end test with a real signed-in user's token, pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.
