@@ -1,8 +1,8 @@
 # Speech-to-Text Server
 
 Express backend that turns a recorded audio clip into text using FFmpeg and
-[whisper.cpp](https://github.com/ggml-org/whisper.cpp). The API is defined in
-[`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md).
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp), and (contract v2) into a **speaker-labelled transcript
+saved under a doctor's account**. The API is defined in [`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md).
 
 ```
 browser recording ─▶ POST /api/transcribe ─▶ FFmpeg (16 kHz mono WAV) ─▶ whisper-cli ─▶ JSON
@@ -40,6 +40,27 @@ npm run setup:model      # downloads models/ggml-small.en.bin + the VAD model (g
 `setup:model` accepts another model name: `sh scripts/download-model.sh base.en`
 (then set `WHISPER_MODEL=models/ggml-base.en.bin`). `base.en` (148 MB) is faster and
 lighter but less accurate on accents, noise and medical terms. Model files are never committed.
+
+## Speaker diarization and doctor accounts (contract v2)
+
+```bash
+npm run setup:diarization     # Python venv + two small local models (about 30 MB), all git-ignored
+```
+
+- **Diarization** (who spoke when) runs locally through `diarization/diarize.py` (sherpa-onnx with
+  pyannote-segmentation-3.0, MIT, and WeSpeaker embeddings, Apache-2.0). No audio leaves the machine. It is
+  best-effort: if it is not installed or fails, transcripts are still returned with `speakerId: null` and
+  `diarization.status` set to `unavailable` or `failed`. Segments are aligned to speakers by timestamp overlap
+  (see the contract for the strategy and limitations). Roles (doctor/patient) are assigned by the doctor, never inferred.
+- **Accounts** use Supabase Auth. Set `SUPABASE_URL` in `.env`; the backend verifies each Bearer token against the
+  project's public signing keys. Transcripts are stored in a local SQLite file (`DB_PATH`, default
+  `data/transcripts.sqlite`, git-ignored) scoped to the verified doctor. Requires Node 24+ (`node:sqlite`, which
+  prints an "experimental" notice at startup).
+- **Synthetic test audio** in `tests/fixtures/synthetic/` is generated from text-to-speech voices by
+  `scripts/make-synthetic-conversations.py` (macOS). Never use real patient recordings as fixtures.
+- **Not evaluated:** pyannote's `speaker-diarization-community-1` (CC-BY-4.0) is gated behind accepting its
+  conditions on Hugging Face with a personal token, so it was not benchmarked. It can be added behind the same
+  JSON interface as `diarize.py`.
 
 ## Preflight check and warm-up
 
@@ -119,6 +140,12 @@ npm test
 - `tests/api.test.js`: validation, limits, error codes, timeouts, concurrency, cleanup.
   Several of these swap whisper for a small fake shell script to exercise subprocess
   failures deterministically. **Those tests do not prove speech recognition works.**
+- `tests/align.test.js`: alignment logic (ordering, ids, null speakers, ambiguity).
+- `tests/transcriptions.test.js`: v2 endpoints, JWT verification (expired, wrong key/issuer, alg confusion),
+  cross-doctor isolation, persistence, roles, corrections, history, deletion. Uses stand-in whisper/diarizer
+  scripts and a locally generated key set, so it verifies the API and data layer only.
+- `tests/real-diarization.test.js`: real diarization and the full real pipeline (whisper.cpp + diarizer + auth +
+  database) on synthetic two-voice conversations. Skipped if diarization is not installed.
 - `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
   `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,
   WebM/Opus and header-less streamed WebM (what browsers record), asserts the actual
@@ -180,7 +207,9 @@ server/
 
 - English only by default (`small.en`). Multilingual needs a multilingual model and `WHISPER_LANGUAGE`.
 - Transcription runs after recording stops; there is no streaming.
-- No speaker labels, authentication, or persistence. Timestamps are opt-in (`?segments=1`).
+- Speaker labels are best-effort (see the contract's limitations); overlapping speech and similar voices are weak spots.
+- The legacy `POST /api/transcribe` is unauthenticated and stores nothing. Timestamps are opt-in there (`?segments=1`).
+- Transcripts are stored unencrypted in SQLite (use disk encryption); not approved for real patient data.
 - Durations up to 60.5 s are accepted, since recorders often overshoot 60 s slightly.
 - When `MAX_CONCURRENT` jobs are running, new requests are rejected with 503 rather than queued.
 - An unclean server kill (SIGKILL, crash) can leave files in the temp dir; they are safe to delete.

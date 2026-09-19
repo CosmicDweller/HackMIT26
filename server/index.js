@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { fileExists } from "./lib/exec.js";
+import { diarizationSetup } from "./services/diarization.js";
 import { checkReadiness } from "./services/readiness.js";
 
 const config = loadConfig();
@@ -13,6 +14,14 @@ if (!ready) {
 
 if (config.whisperVadModel && !(await fileExists(config.whisperVadModel))) {
   console.warn("VAD model not found: silent recordings may produce phantom text. Run `npm run setup:model`.");
+}
+
+const diarization = await diarizationSetup(config);
+if (config.diarizationEnabled && !(diarization.python && diarization.script && diarization.models)) {
+  console.warn("Speaker diarization is not installed: transcriptions will be returned without speaker labels. Run `npm run setup:diarization`.");
+}
+if (!config.supabaseUrl) {
+  console.warn("SUPABASE_URL is not set: /api/transcriptions and /api/me will reject every request until it is configured.");
 }
 
 const server = app.listen(config.port, () => {

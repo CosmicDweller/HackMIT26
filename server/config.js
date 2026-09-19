@@ -29,6 +29,16 @@ export function loadConfig(env = process.env) {
     maxDurationSeconds: intFromEnv(env, "MAX_DURATION_SECONDS", 60),
     processTimeoutMs: intFromEnv(env, "PROCESS_TIMEOUT_MS", 120_000),
     maxConcurrent: intFromEnv(env, "MAX_CONCURRENT", 2),
+    // Speaker diarization (local Python module, see diarization/diarize.py).
+    diarizationEnabled: env.DIARIZATION_ENABLED !== "false",
+    diarizationPython: path.resolve(serverDir, env.DIARIZATION_PYTHON ?? "diarization/.venv/bin/python"),
+    diarizationScript: path.join(serverDir, "diarization", "diarize.py"),
+    diarizationThreshold: Number.parseFloat(env.DIARIZATION_THRESHOLD ?? "") || 0.4,
+    diarizationTimeoutMs: intFromEnv(env, "DIARIZATION_TIMEOUT_MS", 60_000),
+    // Transcript database (SQLite). Contains transcripts: keep out of Git and back it up carefully.
+    dbPath: path.resolve(serverDir, env.DB_PATH ?? "data/transcripts.sqlite"),
+    // Doctor authentication: Supabase Auth JWTs are verified against the project's published keys.
+    supabaseUrl: env.SUPABASE_URL ?? "",
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),
   };
 }

@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile, chmod } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../app.js";
 import { loadConfig } from "../config.js";
 
@@ -13,13 +14,13 @@ export const jfkWav = path.join(fixtureDir, "jfk.wav");
 export async function makeConfig(overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "stt-test-"));
   const tmpDir = path.join(root, "work");
-  const config = { ...loadConfig({}), tmpDir, ...overrides };
+  const config = { ...loadConfig({}), tmpDir, dbPath: path.join(root, "db", "test.sqlite"), ...overrides };
   return { config, root, tmpDir, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
-/** Start the app on an ephemeral port. */
-export async function startServer(config) {
-  const app = createApp(config);
+/** Start the app on an ephemeral port. `overrides` is passed to createApp (jwks, store). */
+export async function startServer(config, overrides) {
+  const app = createApp(config, overrides);
   const server = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });
@@ -85,4 +86,49 @@ export function makeWebm(inputWav, outputWebm) {
     encoding: "utf8",
   });
   if (result.status !== 0) throw new Error(`ffmpeg failed: ${result.stderr}`);
+}
+
+export const fixtureSynthetic = (name) => path.join(fixtureDir, "synthetic", name);
+
+export const TEST_SUPABASE_URL = "https://test-project.supabase.co";
+
+/**
+ * A local signing-key set standing in for Supabase's published keys, plus a token signer.
+ * Verification code paths (signature, expiry, issuer, audience, algorithm) are the real ones.
+ */
+export async function makeAuth() {
+  const { publicKey, privateKey } = await generateKeyPair("ES256");
+  const jwk = { ...(await exportJWK(publicKey)), kid: "test-key", alg: "ES256", use: "sig" };
+  const jwks = createLocalJWKSet({ keys: [jwk] });
+
+  const sign = async (subject = "doctor-a", claims = {}, options = {}) => {
+    const {
+      key = privateKey, alg = "ES256", expiresIn = "1h", issuer = `${TEST_SUPABASE_URL}/auth/v1`, audience = "authenticated",
+    } = options;
+    return new SignJWT({ role: "authenticated", email: `${subject}@example.test`, ...claims })
+      .setProtectedHeader({ alg, kid: "test-key" })
+      .setSubject(subject)
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setExpirationTime(expiresIn)
+      .sign(key);
+  };
+  return { jwks, sign, privateKey };
+}
+
+/** A stand-in for diarize.py. Like the fake whisper, tests using it verify our handling only. */
+export async function makeFakeDiarizer(dir, mode) {
+  const bodies = {
+    // Matches the fake whisper "ok" output: 250-1500 "Hello", 1500-3000 "world."
+    ok: `printf '{"engine":"fake","numSpeakers":2,"segments":[{"speaker":0,"start":0.25,"end":1.5},{"speaker":1,"start":1.5,"end":3.0}]}'`,
+    fail: `printf '{"error":"DIARIZATION_FAILED"}'; exit 2`,
+    missingModel: `printf '{"error":"MODEL_MISSING"}'; exit 2`,
+    garbage: `printf 'not json'`,
+    hang: `exec sleep 30`,
+  };
+  const file = path.join(dir, `fake-diarizer-${mode}`);
+  await writeFile(file, `#!/bin/sh\n${bodies[mode]}\n`);
+  await chmod(file, 0o755);
+  return file;
 }

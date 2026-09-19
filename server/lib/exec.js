@@ -16,6 +16,7 @@ export function run(file, args, { timeoutMs, signal, maxBuffer = 1024 * 1024 } =
       { timeout: timeoutMs, signal, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true },
       (error, stdout, stderr) => {
         if (!error) return resolve({ stdout, stderr });
+        error.stdout = stdout;
         error.stderr = stderr;
         error.notFound = error.code === "ENOENT";
         error.aborted = signal?.aborted === true;

@@ -60,10 +60,12 @@ mislead the backend agent or a future session.
 Coordinate with the backend agent on issue #3 to confirm the API contract,
 then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
 
-## Backend status (lz, speech-to-text)
-- `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`
-  (Express + FFmpeg + whisper.cpp `small.en`, real inference verified; ~1.4 s for a 55 s clip on M4 Pro).
-- 32 tests pass (`cd server && npm test`), including 5 real-inference tests (WAV, WebM, header-less WebM, silence, noise). Also: VAD stops phantom text on silence, jobs are cancelled on client disconnect, `npm run doctor` preflight/warm-up, optional `?segments=1` timestamps (proposed on #3; default response unchanged).
-- Setup: `brew install ffmpeg whisper-cpp`, then `cd server && npm install && npm run setup:model`. See `server/README.md`.
-- Proposed contract details (HTTP status codes, CORS, silence -> 422) await frontend confirmation on issue #3.
-- Backend PR #5 is open, not merged or deployed. Vercel cannot run whisper.cpp; demo plan is the backend on a laptop behind an HTTPS tunnel (see `server/README.md`).
+## Backend status (lz)
+- v1 (`POST /api/transcribe`, `GET /api/health`) is merged and unchanged. See `docs/API_CONTRACT.md`.
+- v2 (proposed on issue #3, on branch `lz`): speaker diarization (local sherpa-onnx), Supabase Auth JWT
+  verification, and per-doctor transcript storage (local SQLite) with speaker roles, segment corrections, history
+  and deletion. 92 backend tests pass, including real diarization and a real end-to-end run on synthetic
+  two-voice conversations (8/8 turns correct; overlapping speech is a known weak spot).
+- Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor`.
+- Not done / needs decisions: review-confirmation endpoint (waiting for frontend), a real Supabase project
+  (`SUPABASE_URL`), pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.

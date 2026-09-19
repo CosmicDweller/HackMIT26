@@ -1,0 +1,57 @@
+{
+  "voices": {
+    "A": "Daniel",
+    "B": "Samantha"
+  },
+  "durationMs": 13543,
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Good morning. What brings you in today?",
+      "startMs": 300,
+      "endMs": 2706
+    },
+    {
+      "speaker": "B",
+      "text": "I have had a headache for three days.",
+      "startMs": 2506,
+      "endMs": 4290
+    },
+    {
+      "speaker": "A",
+      "text": "Are you eating regularly?",
+      "startMs": 4890,
+      "endMs": 6169
+    },
+    {
+      "speaker": "B",
+      "text": "I eat two meals per day.",
+      "startMs": 5969,
+      "endMs": 7370
+    },
+    {
+      "speaker": "A",
+      "text": "Any fever?",
+      "startMs": 7870,
+      "endMs": 8594
+    },
+    {
+      "speaker": "B",
+      "text": "No.",
+      "startMs": 8194,
+      "endMs": 8608
+    },
+    {
+      "speaker": "A",
+      "text": "Thank you. I will order a blood test.",
+      "startMs": 9208,
+      "endMs": 11697
+    },
+    {
+      "speaker": "B",
+      "text": "Okay, thank you doctor.",
+      "startMs": 11397,
+      "endMs": 13143
+    }
+  ]
+}

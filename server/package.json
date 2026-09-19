@@ -6,17 +6,19 @@
   "type": "module",
   "main": "index.js",
   "engines": {
-    "node": ">=22.9"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env index.js",
     "start": "NODE_ENV=production node --env-file-if-exists=.env index.js",
     "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
     "setup:model": "sh scripts/download-model.sh",
+    "setup:diarization": "sh scripts/setup-diarization.sh",
     "doctor": "node --env-file-if-exists=.env scripts/doctor.js"
   },
   "dependencies": {
     "express": "^5.2.1",
+    "jose": "^6.2.12",
     "multer": "^2.4.0"
   }
 }
