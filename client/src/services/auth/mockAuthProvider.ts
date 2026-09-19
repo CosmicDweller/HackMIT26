@@ -55,7 +55,7 @@ export const mockAuthProvider: AuthProvider = {
     accounts.set(email, account);
     currentUser = toAuthUser(account);
     notify();
-    return currentUser;
+    return { status: "signed_in", user: currentUser };
   },
 
   async signIn(email, password) {

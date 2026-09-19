@@ -2,8 +2,11 @@
 
 ## Current milestone
 `client/` aligned with the agreed v2 contract (`docs/API_CONTRACT.md` on
-`lz`, PR #6). Real Supabase Auth is wired up in code but not yet turned on —
-waiting on the Supabase project URL/anon key from the owner.
+`lz`, PR #6). Real Supabase Auth is wired up and **verified working
+end-to-end** (sign up → real confirmation email → confirm → sign in → sign
+out → sign back in, zero console errors). `VITE_USE_MOCK_TRANSCRIPTIONS`
+still defaults to true since `/api/transcriptions*` (PR #6) isn't merged
+into `main` yet.
 
 ## Completed features
 - Original single-speaker quick-transcribe flow (`/`) preserved unchanged —
@@ -46,27 +49,33 @@ waiting on the Supabase project URL/anon key from the owner.
   `@supabase/supabase-js`), implementing the same `AuthProvider` interface
   as the mock — sign up/in/out, password reset, session, and the access
   token attached as `Authorization: Bearer` by the transcriptions API
-  client. Selected automatically when `VITE_USE_MOCK_AUTH=false`. **Not
-  testable yet** — needs `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from
-  the Supabase project the backend agent configured; asked for these on
-  issue #3.
-- Verified in Chrome (mock mode) after all the above: sign up → new
-  transcription → assign both speakers → review status correctly stays
-  "Needs review" (confirms the derivation bug is fixed) → "Mark as
+  client. Selected automatically when `VITE_USE_MOCK_AUTH=false`.
+  Credentials received from the owner and put in `client/.env.local`
+  (gitignored).
+  - Found and fixed a real bug during testing: Supabase's project requires
+    email confirmation, so `signUp()` succeeds with no session yet — this
+    was surfacing as a red error ("Account created — check your email...")
+    when it's actually a success case. Changed `AuthProvider.signUp()` to
+    return a `{status: "signed_in" | "confirmation_required"}` result
+    instead of throwing, so the signup page can show it as a neutral
+    notice. Mock provider updated to match the new signature.
+  - **Verified for real, not just against the mock**: signed up with a
+    disposable test address, received the actual Supabase confirmation
+    email, clicked the real confirmation link, landed authenticated on
+    `/dashboard`, signed out, signed back in — all against the owner's
+    live Supabase project. No console errors at any step.
+- Verified in Chrome (mock transcriptions) after the contract fixes: sign
+  up → new transcription → assign both speakers → review status correctly
+  stays "Needs review" (confirms the derivation bug is fixed) → "Mark as
   reviewed" flips it → no console errors. Lint and production build pass.
 
 ## Remaining prioritized tasks
-1. Get `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from the owner, set
-   `VITE_USE_MOCK_AUTH=false`, verify real sign-in end to end.
-2. Once backend PR #6 is merged/running locally, set
-   `VITE_USE_MOCK_TRANSCRIPTIONS=false` and verify the full flow against
-   the real diarization backend.
-3. Reply on issue #3: confirm the list-envelope shape (agreed — no change
-   needed), confirm wanting `POST /api/transcriptions/:id/review`
-   (implemented client-side already).
-4. Mobile-width layout not manually verified (same known limitation as
+1. Once backend PR #6 is merged/running locally, set
+   `VITE_USE_MOCK_TRANSCRIPTIONS=false` and verify the full flow (real auth
+   + real diarization) end to end.
+2. Mobile-width layout not manually verified (same known limitation as
    before).
-5. Deploy to Vercel.
+3. Deploy to Vercel.
 
 ## Architectural decisions
 - `client/` owned by the frontend agent (branch `kv`); backend owned by the
@@ -80,19 +89,18 @@ waiting on the Supabase project URL/anon key from the owner.
   Supabase provider is written but gated on missing credentials.
 
 ## Known bugs and blockers
-- Real Supabase auth is implemented but unverified — blocked on project
-  credentials (asked for on issue #3).
 - `/api/transcriptions*` v2 is built on `lz`/PR #6 but not merged into
-  `main`; client still defaults to mocks for this feature.
+  `main`; client still defaults to mocks for this feature. Real auth is no
+  longer blocked — verified working.
 
 ## Test and deployment status
-- No automated tests. Manually verified in Chrome per the flow above. Lint
-  (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment yet.
+- No automated tests. Manually verified in Chrome per the flow above,
+  including a real (non-mock) Supabase auth round trip. Lint (`oxlint`) and
+  build (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Reply on issue #3 with the two open answers (list envelope, review
-endpoint) and ask for Supabase credentials; then verify against the real
-backend once both are available.
+Once backend PR #6 lands, flip `VITE_USE_MOCK_TRANSCRIPTIONS=false` and
+verify the full authenticated + diarized flow against the real backend.
 
 ## Backend status (lz, speech-to-text)
 - `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { AuthProviderError, authProvider } from "@/services/auth";
+import type { SignUpResult } from "@/services/auth/authProvider";
 import type { AuthStatus, AuthUser } from "@/types";
 
 interface AuthContextValue {
@@ -15,7 +16,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   clearError: () => void;
@@ -58,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (email: string, password: string) => {
     setError(null);
     try {
-      await authProvider.signUp(email, password);
+      return await authProvider.signUp(email, password);
     } catch (err) {
       setError(err instanceof AuthProviderError ? err.message : "Sign up failed.");
       throw err;

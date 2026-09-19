@@ -58,11 +58,10 @@ export const supabaseAuthProvider: AuthProvider = {
     const { data, error } = await getClient().auth.signUp({ email, password });
     if (error) throw new AuthProviderError(error.message);
     if (!data.session) {
-      throw new AuthProviderError(
-        "Account created — check your email to confirm it, then sign in.",
-      );
+      // Project requires email confirmation — the user exists but isn't signed in yet.
+      return { status: "confirmation_required" };
     }
-    return toAuthUser(data.user!);
+    return { status: "signed_in", user: toAuthUser(data.user!) };
   },
 
   async signIn(email, password) {

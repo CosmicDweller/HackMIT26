@@ -12,13 +12,19 @@ export function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setConfirmationRequired(false);
     try {
-      await signUp(email, password);
-      navigate("/dashboard", { replace: true });
+      const result = await signUp(email, password);
+      if (result.status === "signed_in") {
+        navigate("/dashboard", { replace: true });
+      } else {
+        setConfirmationRequired(true);
+      }
     } catch {
       // error is surfaced via useAuth().error
     } finally {
@@ -70,6 +76,11 @@ export function SignupPage() {
           />
           <p className="text-xs text-muted-foreground">At least 8 characters.</p>
         </div>
+        {confirmationRequired && (
+          <p className="text-sm text-foreground">
+            Account created — check your email to confirm it, then sign in.
+          </p>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? "Creating account..." : "Create account"}
