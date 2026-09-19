@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { Router } from "express";
-import { invalidAudio, serviceUnavailable } from "../lib/errors.js";
+import { invalidAudio, requestCancelled, serviceUnavailable } from "../lib/errors.js";
 import { createUploadMiddleware } from "../middleware/upload.js";
 import { convertToWav } from "../services/audio.js";
 import { createLimiter } from "../services/limiter.js";
@@ -13,7 +13,7 @@ export function createTranscribeRouter(config) {
   const limiter = createLimiter(config.maxConcurrent);
   const upload = createUploadMiddleware(config);
 
-  async function transcribeUpload(file) {
+  async function transcribeUpload(file, signal) {
     if (!file) throw invalidAudio("No audio file was provided. Send it in the 'audio' field.");
     if (file.size === 0) throw invalidAudio("The audio file is empty.");
 
@@ -37,8 +37,9 @@ export function createTranscribeRouter(config) {
       const remainingMs = () => Math.max(1, deadline - Date.now());
 
       const wavPath = path.join(workDir, "audio.wav");
-      const { durationSeconds } = await convertToWav(file.path, wavPath, config, remainingMs());
-      const text = await transcribeWav(wavPath, workDir, config, remainingMs());
+      const { durationSeconds } = await convertToWav(file.path, wavPath, config, remainingMs(), signal);
+      if (signal.aborted) throw requestCancelled();
+      const text = await transcribeWav(wavPath, workDir, config, remainingMs(), signal);
       return { text, durationSeconds };
     } finally {
       release();
@@ -47,10 +48,16 @@ export function createTranscribeRouter(config) {
   }
 
   router.post("/transcribe", upload, async (req, res, next) => {
+    // If the client goes away before we respond, stop FFmpeg/whisper instead of finishing for nobody.
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) controller.abort();
+    });
+
     let result;
     let failure;
     try {
-      result = await transcribeUpload(req.file);
+      result = await transcribeUpload(req.file, controller.signal);
     } catch (error) {
       failure = error;
     }

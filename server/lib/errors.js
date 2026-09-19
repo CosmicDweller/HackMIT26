@@ -24,3 +24,6 @@ export const transcriptionFailed = (message = "Transcription failed. Please try 
 
 export const serviceUnavailable = (message = "Transcription is temporarily unavailable.", options) =>
   new AppError("SERVICE_UNAVAILABLE", 503, message, options);
+
+/** The client disconnected before we finished. No response is sent; this only unwinds the job. */
+export const requestCancelled = () => new AppError("TRANSCRIPTION_FAILED", 499, "Request cancelled.");

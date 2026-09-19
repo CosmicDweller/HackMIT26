@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileExists, run } from "../lib/exec.js";
-import { serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
+import { requestCancelled, serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
 
 /** Remove whisper's non-speech markers such as [BLANK_AUDIO] or [MUSIC]. */
 function cleanTranscript(segments) {
@@ -18,7 +18,7 @@ function cleanTranscript(segments) {
  * Reads whisper's structured JSON output rather than parsing terminal logs.
  * `workDir` must be a directory private to this request.
  */
-export async function transcribeWav(wavPath, workDir, config, timeoutMs) {
+export async function transcribeWav(wavPath, workDir, config, timeoutMs, signal) {
   const outputPrefix = path.join(workDir, "result");
   const args = [
     "-m", config.whisperModel,
@@ -35,8 +35,9 @@ export async function transcribeWav(wavPath, workDir, config, timeoutMs) {
   }
 
   try {
-    await run(config.whisperBin, args, { timeoutMs });
+    await run(config.whisperBin, args, { timeoutMs, signal });
   } catch (error) {
+    if (error.aborted) throw requestCancelled();
     if (error.notFound) throw serviceUnavailable("Speech recognition is not available on the server.");
     if (error.timedOut) throw transcriptionFailed("Transcription timed out.", 504);
     console.error("whisper-cli failed:", error.message, (error.stderr ?? "").slice(-500));

@@ -5,19 +5,21 @@ import path from "node:path";
 /**
  * Run an executable with an argument array. There is no shell, so user input can
  * never be interpreted as a command. Resolves with { stdout, stderr }.
- * Rejects with an Error carrying `.notFound` (executable missing) or `.timedOut`.
+ * Aborting `signal` kills the process. Rejects with an Error carrying `.notFound`
+ * (executable missing), `.timedOut` or `.aborted`.
  */
-export function run(file, args, { timeoutMs, maxBuffer = 1024 * 1024 } = {}) {
+export function run(file, args, { timeoutMs, signal, maxBuffer = 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       args,
-      { timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true },
+      { timeout: timeoutMs, signal, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true },
       (error, stdout, stderr) => {
         if (!error) return resolve({ stdout, stderr });
         error.stderr = stderr;
         error.notFound = error.code === "ENOENT";
-        error.timedOut = Boolean(error.killed) && error.signal === "SIGKILL" && timeoutMs !== undefined;
+        error.aborted = signal?.aborted === true;
+        error.timedOut = !error.aborted && Boolean(error.killed) && error.signal === "SIGKILL" && timeoutMs !== undefined;
         reject(error);
       },
     );

@@ -12,7 +12,8 @@
     "dev": "node --watch --env-file-if-exists=.env index.js",
     "start": "NODE_ENV=production node --env-file-if-exists=.env index.js",
     "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
-    "setup:model": "sh scripts/download-model.sh"
+    "setup:model": "sh scripts/download-model.sh",
+    "doctor": "node --env-file-if-exists=.env scripts/doctor.js"
   },
   "dependencies": {
     "express": "^5.2.1",

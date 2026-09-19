@@ -56,7 +56,8 @@ export async function makeFakeWhisper(dir, mode) {
     badjson: `printf 'not json' > "$OUT.json"`,
     nooutput: `exit 0`,
     fail: `echo "boom at /secret/internal/path" >&2; exit 1`,
-    hang: `sleep 30`,
+    // Records its pid next to the script, then becomes `sleep` so killing it leaves no orphan.
+    hang: `echo $$ > "$(dirname "$0")/hang.pid"; exec sleep 30`,
     slow: `sleep 1.5; printf '{"transcription":[{"text":" slow"}]}' > "$OUT.json"`,
   };
   const file = path.join(dir, `fake-whisper-${mode}`);

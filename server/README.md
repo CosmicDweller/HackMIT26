@@ -41,6 +41,16 @@ npm run setup:model      # downloads models/ggml-small.en.bin + the VAD model (g
 (then set `WHISPER_MODEL=models/ggml-base.en.bin`). `base.en` (148 MB) is faster and
 lighter but less accurate on accents, noise and medical terms. Model files are never committed.
 
+## Preflight check and warm-up
+
+```bash
+npm run doctor
+```
+
+Checks FFmpeg, `whisper-cli`, both model files and the port, prints a fix for anything
+missing, then runs a real transcription of a bundled clip. Run it before a demo: it also
+warms up the GPU (the first whisper run after install can take about 15 s).
+
 ## Run
 
 ```bash
@@ -148,7 +158,7 @@ server/
   services/             audio.js (FFmpeg), whisper.js, limiter.js, readiness.js
   middleware/           upload.js (multer), errors.js (CORS + error handler)
   lib/                  errors.js, exec.js (spawn without a shell)
-  scripts/              download-model.sh
+  scripts/              download-model.sh, doctor.js
   tests/
 ```
 
@@ -158,7 +168,8 @@ server/
   names in a private temp dir; the client filename is never used as a path.
 - FFmpeg is run with `-protocol_whitelist file` so an uploaded playlist cannot make it
   fetch network resources.
-- Temporary files are deleted before each response, on success and on failure.
+- Temporary files are deleted before each response, on success and on failure. If the client
+  disconnects mid-request, FFmpeg/whisper are killed and the files removed.
 - Errors returned to clients never contain filesystem paths, stderr, or environment values.
   Details are logged on the server only.
 
@@ -168,6 +179,5 @@ server/
 - Transcription runs after recording stops; there is no streaming.
 - No speaker labels, timestamps, authentication, or persistence.
 - Durations up to 60.5 s are accepted, since recorders often overshoot 60 s slightly.
-- If a client disconnects mid-request, the job still runs to completion before its files are removed.
 - When `MAX_CONCURRENT` jobs are running, new requests are rejected with 503 rather than queued.
 - An unclean server kill (SIGKILL, crash) can leave files in the temp dir; they are safe to delete.

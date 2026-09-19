@@ -1,6 +1,6 @@
 import { open, stat } from "node:fs/promises";
 import { run } from "../lib/exec.js";
-import { invalidAudio, serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
+import { invalidAudio, requestCancelled, serviceUnavailable, transcriptionFailed } from "../lib/errors.js";
 
 // Output format is fixed: 16 kHz, mono, signed 16-bit PCM = 32,000 bytes per second.
 const BYTES_PER_SECOND = 16000 * 2;
@@ -35,7 +35,7 @@ export async function wavDurationSeconds(wavPath) {
  * Output is capped just above the duration limit so a hostile file cannot make FFmpeg
  * write unbounded data. Returns { durationSeconds }.
  */
-export async function convertToWav(inputPath, outputPath, config, timeoutMs) {
+export async function convertToWav(inputPath, outputPath, config, timeoutMs, signal) {
   const args = [
     "-nostdin",
     "-hide_banner",
@@ -53,8 +53,9 @@ export async function convertToWav(inputPath, outputPath, config, timeoutMs) {
   ];
 
   try {
-    await run(config.ffmpegBin, args, { timeoutMs });
+    await run(config.ffmpegBin, args, { timeoutMs, signal });
   } catch (error) {
+    if (error.aborted) throw requestCancelled();
     if (error.notFound) throw serviceUnavailable("Audio processing is not available on the server.");
     if (error.timedOut) throw transcriptionFailed("Audio processing timed out.", 504);
     // Non-zero exit: FFmpeg could not decode the upload (not audio, corrupt, no audio stream).

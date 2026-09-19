@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import path from "node:path";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import {
   leftoverFiles,
   makeConfig,
@@ -206,6 +206,41 @@ describe("POST /api/transcribe failure handling", () => {
     const body = await expectError(await postAudio(baseUrl, await readFixture()), 504, "TRANSCRIPTION_FAILED");
     assert.match(body.error, /timed out/);
     assert.ok(Date.now() - started < 10_000, "should not wait for the 30 s sleep");
+    assert.deepEqual(await leftoverFiles(tmpDir), []);
+  });
+});
+
+describe("client disconnect", () => {
+  test("kills whisper, frees the slot and removes temp files when the client aborts", async () => {
+    const { baseUrl, root, tmpDir } = await setup({ fakeMode: "hang", maxConcurrent: 1 });
+    const controller = new AbortController();
+    const form = new FormData();
+    form.append("audio", new Blob([await readFixture()], { type: "audio/wav" }), "a.wav");
+    const request = fetch(`${baseUrl}/api/transcribe`, { method: "POST", body: form, signal: controller.signal });
+    request.catch(() => {});
+
+    // Wait until the (fake) whisper process is running, then hang up.
+    const pidFile = path.join(root, "hang.pid");
+    let pid;
+    for (let i = 0; i < 50 && !pid; i++) {
+      pid = Number.parseInt(await readFile(pidFile, "utf8").catch(() => ""), 10) || undefined;
+      if (!pid) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(pid, "whisper stand-in never started");
+    controller.abort();
+
+    const isAlive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 50 && (isAlive() || (await leftoverFiles(tmpDir)).length); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(isAlive(), false, "whisper process should have been killed");
     assert.deepEqual(await leftoverFiles(tmpDir), []);
   });
 });
