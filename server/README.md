@@ -56,6 +56,10 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   project's public signing keys. Transcripts are stored in a local SQLite file (`DB_PATH`, default
   `data/transcripts.sqlite`, git-ignored) scoped to the verified doctor. Requires Node 24+ (`node:sqlite`, which
   prints an "experimental" notice at startup).
+- **Checking a real sign-in:** with `SUPABASE_URL` set, sign in through the app, copy the session's access token
+  and run `pbpaste | npm run check-token`. It reads the token from stdin, verifies it exactly like the API does and
+  prints only the verified identity (never the token). The backend needs no Supabase key: only the public
+  project URL. The anon/publishable keys belong in the frontend, not here, and a service-role key must never be used.
 - **Synthetic test audio** in `tests/fixtures/synthetic/` is generated from text-to-speech voices by
   `scripts/make-synthetic-conversations.py` (macOS). Never use real patient recordings as fixtures.
 - **Not evaluated:** pyannote's `speaker-diarization-community-1` (CC-BY-4.0) is gated behind accepting its
