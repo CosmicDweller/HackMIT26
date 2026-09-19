@@ -31,7 +31,9 @@ export function loadConfig(env = process.env) {
     deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 9 * 60_000),
     // Recordings longer than this need a callback (async) request; without one they are rejected up
     // front (before any audio is sent) rather than risking a 10-minute timeout that loses the result.
-    deepgramSyncMaxSeconds: intFromEnv(env, "DEEPGRAM_SYNC_MAX_SECONDS", 30 * 60),
+    // Default = the recording maximum: a real 2-hour recording was processed in 29 s (10 s at Deepgram).
+    // Lower it on a slow uplink: the whole upload must finish inside DEEPGRAM_TIMEOUT_MS.
+    deepgramSyncMaxSeconds: intFromEnv(env, "DEEPGRAM_SYNC_MAX_SECONDS", 7200),
     // Public URL that Deepgram can POST results to (for long recordings). Empty = callbacks disabled.
     deepgramCallbackBaseUrl: env.DEEPGRAM_CALLBACK_BASE_URL ?? "",
     callbackPort: intFromEnv(env, "CALLBACK_PORT", 8443),

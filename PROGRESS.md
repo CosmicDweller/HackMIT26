@@ -66,7 +66,8 @@ then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
   (`/api/transcription-jobs*`), file-backed recordings up to 2 hours, `needsReview` flags, `diarizationStatus`, and a secured (off by
   default) callback listener for long recordings. whisper.cpp remains an optional fallback (`STT_ENGINE=local`).
 - Verified live with synthetic audio: exact request, model `medical-nova-3`, diarizer v2, A-B-A / 3-speaker / 5-minute recordings
-  through the full stack, including a 30-minute recording (WER 0.7%, DER 0.6%, 8.1 s end to end, server memory +54 MB); the 3-speaker case has a
-  documented misattribution. A real 7200 s file passes validation (stub Deepgram). **Not verified:** a 2-hour recording and callbacks against the real service.
+  through the full stack, including **30-minute and 2-hour recordings** (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
+  misattributes a sentence, and the 2-hour recording produced a spurious 3rd speaker (0.08% of speech; now flagged with a warning, not reassigned).
+  Synchronous limit default raised to 2 h. **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
 - Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

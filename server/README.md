@@ -66,7 +66,7 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
 - **Recordings and jobs.** Every authenticated recording is a persistent job (`POST /api/transcription-jobs`, poll
   `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 2 hours / 1 GiB,
   written to disk (never held in memory), verified by decoding the whole file, sent to Deepgram as FLAC streamed from disk.
-  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (30 min; a real 30-minute recording finished in 8 s) need a callback URL, which is off by default and needs a public
+  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (default 2 h; a real 2-hour recording finished in 29 s) need a callback URL, which is off by default and needs a public
   endpoint (it cannot reach localhost); without it they are rejected before any audio is sent. Timeouts and restarts never
   trigger an automatic resubmission (you would be billed twice). See the contract for statuses, errors and retention.
 - **Evaluating it.** `npm run eval:deepgram` scores the live engine on the synthetic recordings (WER, diarization error rate,

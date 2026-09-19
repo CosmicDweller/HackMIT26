@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { DeepgramError, normalizeDeepgramResponse } from "../services/deepgram.js";
+import { DeepgramError, minorSpeakers, normalizeDeepgramResponse } from "../services/deepgram.js";
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "deepgram");
 const load = (name) => JSON.parse(readFileSync(path.join(dir, `${name}.json`), "utf8"));
@@ -236,5 +236,22 @@ describe("invalid or missing provider data", () => {
 
   test("an empty word list is 'no speech', not an error", () => {
     assert.equal(normalizeDeepgramResponse(response([])).empty, true);
+  });
+});
+
+describe("minor speakers (a real two-hour test produced a 3rd 'speaker' of 10 one-word segments)", () => {
+  const seg = (speaker, seconds) => ({ providerSpeaker: speaker, startMs: 0, endMs: seconds * 1000 });
+  test("a tiny third speaker in a long recording is reported", () => {
+    const found = minorSpeakers([...Array(300).fill().map(() => seg(0, 10)), ...Array(150).fill().map(() => seg(1, 10)), seg(2, 1), seg(2, 1)]);
+    assert.deepEqual(found, [{ speaker: 2, segments: 2, seconds: 2 }]);
+  });
+  test("a genuine third speaker with real speech is not reported", () => {
+    assert.deepEqual(minorSpeakers([seg(0, 100), seg(1, 100), seg(2, 40)]), []);
+  });
+  test("a two-speaker recording is never reported (a brief answer is normal)", () => {
+    assert.deepEqual(minorSpeakers([seg(0, 1000), seg(1, 1)]), []);
+  });
+  test("unknown speakers are ignored", () => {
+    assert.deepEqual(minorSpeakers([seg(0, 100), seg(1, 100), seg(null, 1)]), []);
   });
 });

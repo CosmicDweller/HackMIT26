@@ -302,3 +302,31 @@ export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85,
     meta,
   };
 }
+
+// A speaker with less than this share of the speech (and under MINOR_SPEAKER_MAX_SECONDS) is suspicious: in a real
+// two-hour test a third "speaker" of 10 one-word segments (0.08% of the speech) appeared in a two-person recording.
+const MINOR_SPEAKER_SHARE = 0.01;
+const MINOR_SPEAKER_MAX_SECONDS = 60;
+
+/**
+ * Speakers that own almost none of the speech, which are often a diarization artefact. Nothing is reassigned
+ * (that would silently override the provider): the caller flags their segments for review and warns the doctor.
+ * Only speaker numbers and counts are reported, never transcript text.
+ * Returns [{ speaker, segments, seconds }].
+ */
+export function minorSpeakers(segments) {
+  const perSpeaker = new Map();
+  let total = 0;
+  for (const segment of segments) {
+    const seconds = (segment.endMs - segment.startMs) / 1000;
+    total += seconds;
+    if (segment.providerSpeaker === null) continue;
+    const entry = perSpeaker.get(segment.providerSpeaker) ?? { speaker: segment.providerSpeaker, segments: 0, seconds: 0 };
+    entry.segments += 1;
+    entry.seconds += seconds;
+    perSpeaker.set(segment.providerSpeaker, entry);
+  }
+  if (perSpeaker.size < 3) return []; // a second speaker with little speech is normal (a short answer), so require 3+
+  return [...perSpeaker.values()].filter((entry) => total > 0 && entry.seconds / total < MINOR_SPEAKER_SHARE && entry.seconds < MINOR_SPEAKER_MAX_SECONDS);
+}
+

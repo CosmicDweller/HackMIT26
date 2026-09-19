@@ -228,6 +228,39 @@ describe("job lifecycle with real Deepgram responses", () => {
   });
 });
 
+describe("suspicious minor speakers", () => {
+  const words = (speaker, count, start, secondsEach = 0.5) =>
+    Array.from({ length: count }, (_, i) => ({
+      word: "word", punctuated_word: i === count - 1 ? "word." : "word", start: start + i * secondsEach, end: start + (i + 1) * secondsEach,
+      confidence: 0.99, speaker, speaker_confidence: 0.99,
+    }));
+  const build = () => {
+    const a = words(0, 200, 0);
+    const b = words(1, 100, 110);
+    const stray = words(2, 1, 170); // one word, 0.5 s of a ~150 s conversation
+    const all = [...a, ...b, ...stray];
+    return {
+      metadata: { request_id: "r", duration: 171, model_info: { m: { name: "medical-nova-3", version: "1" } }, diarize_info: { arch: "v2", model_uuid: "u" } },
+      results: { channels: [{ alternatives: [{ transcript: "x", words: all }] }], utterances: [] },
+    };
+  };
+
+  test("a tiny extra speaker is kept as detected, flagged for review, and the doctor is warned without exposing any text", async () => {
+    const { createJob, finished, call, tokenFor } = await setup({ reply: json(200, build()) });
+    const token = await tokenFor("doctor-a");
+    const done = await finished(token, (await createJob(token)).body.jobId);
+    const t = (await call(token, "GET", `/api/transcriptions/${done.transcriptionId}`)).body;
+    assert.deepEqual(t.speakers.map((s) => s.id), ["speaker_0", "speaker_1", "speaker_2"], "nothing is silently reassigned or dropped");
+    const stray = t.segments.filter((s) => s.speakerId === "speaker_2");
+    assert.equal(stray.length, 1);
+    assert.equal(stray[0].needsReview, true);
+    assert.equal(t.warnings.length, 1);
+    assert.equal(t.warnings[0].code, "MINOR_SPEAKER_DETECTED");
+    assert.match(t.warnings[0].message, /Speaker 3 has only 1 short segment/);
+    assert.ok(!/word/.test(t.warnings[0].message), "no transcript text in the warning");
+  });
+});
+
 describe("failures, retries and duplicate-charge safety", () => {
   test("authentication failure: sanitized error, recording kept for retry, one request only", async () => {
     const { createJob, finished, tokenFor, stub, uploads, call } = await setup({ reply: json(401, { err_msg: `invalid ${KEY}` }) });

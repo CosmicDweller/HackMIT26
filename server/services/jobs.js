@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { AppError, notFound } from "../lib/errors.js";
 import { alignSegments } from "./align.js";
-import { DeepgramError, deepgramConfigured, normalizeDeepgramResponse, requestDeepgram } from "./deepgram.js";
+import { DeepgramError, deepgramConfigured, minorSpeakers, normalizeDeepgramResponse, requestDeepgram } from "./deepgram.js";
 import { makeWorkDir, prepareRecording, RecordingError } from "./recording.js";
 
 // ---------------------------------------------------------------------------------------------
@@ -103,6 +103,10 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
   // ---- building the stored transcript --------------------------------------------------------
 
   function fromDeepgram(normalized, { model, mode, fallbackModelUsed }) {
+    // Speakers with almost no speech are probably a diarization artefact: flag, never reassign.
+    const minor = minorSpeakers(normalized.segments);
+    const minorSet = new Set(minor.map((entry) => entry.speaker));
+    for (const segment of normalized.segments) if (minorSet.has(segment.providerSpeaker)) segment.needsReview = true;
     const speakers = normalized.speakerIndices.map((index) => ({ id: `speaker_${index}`, label: `Speaker ${index + 1}`, role: "unassigned" }));
     const segments = normalized.segments.map((segment, index) => ({
       id: `segment_${index + 1}`,
@@ -122,9 +126,15 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
       diarizationStatus: normalized.diarizationStatus === "failed" ? "failed" : "ok",
       diarizationResult: normalized.diarizationStatus,
       providerMeta: { ...normalized.meta, requestedModel: model, mode, processedAt: now() },
-      warnings: fallbackModelUsed
-        ? [{ code: "FALLBACK_MODEL_USED", message: `The general model (${model}) was used because the medical model was unavailable. It is not tuned for medical vocabulary: review carefully.` }]
-        : [],
+      warnings: [
+        ...(fallbackModelUsed
+          ? [{ code: "FALLBACK_MODEL_USED", message: `The general model (${model}) was used because the medical model was unavailable. It is not tuned for medical vocabulary: review carefully.` }]
+          : []),
+        ...minor.map((entry) => ({
+          code: "MINOR_SPEAKER_DETECTED",
+          message: `Speaker ${entry.speaker + 1} has only ${entry.segments} short segment${entry.segments === 1 ? "" : "s"} (${Math.round(entry.seconds)} s of speech). This may be a speaker-detection error: check those segments and reassign them if needed.`,
+        })),
+      ],
     };
   }
 

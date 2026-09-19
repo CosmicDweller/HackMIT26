@@ -385,7 +385,7 @@ React  ->  Express backend  ->  Deepgram hosted API (audio leaves this machine)
 | --- | --- |
 | `status` | Always `completed` on a transcription resource (in-progress work is a *job*). |
 | `diarizationStatus` | `completed` (the diarizer ran and labelled every word; a genuine one-speaker recording is `completed`), `partial` (some words unlabelled), or `failed` (the diarizer did not run; every `speakerId` is `null`). `diarization.status` from v2 is kept unchanged for existing clients. |
-| `warnings` | `[{ code, message }]`. `FALLBACK_MODEL_USED` when an explicitly configured fallback model replaced the medical model. Empty normally. |
+| `warnings` | `[{ code, message }]`. `FALLBACK_MODEL_USED` when an explicitly configured fallback model replaced the medical model; `MINOR_SPEAKER_DETECTED` when a speaker owns under 1% of the speech (a likely speaker-detection artefact; only counts are reported, never text). Empty normally. |
 | `segments[].needsReview` | `true` when the text or speaker is doubtful (unknown speaker, a content word below the confidence threshold, invalid timing, or low speaker confidence). Editing a segment clears its flag. **Advisory only** (see limitations). |
 
 **Speaker ids.** With Deepgram, `speaker_N` is Deepgram's own speaker index N (starting at 0) and the label is
@@ -471,7 +471,7 @@ most `MAX_SUBMIT_ATTEMPTS` times. After a restart a possibly-sent recording is f
 
 Deepgram's synchronous requests return `504` after 10 minutes and it does not store transcripts, so a timed-out request is
 paid for and lost. Therefore:
-- Recordings up to `DEEPGRAM_SYNC_MAX_SECONDS` (default 1800 s) are sent synchronously.
+- Recordings up to `DEEPGRAM_SYNC_MAX_SECONDS` (default 7200 s, the maximum recording length) are sent synchronously. A real two-hour recording was processed in 29 s end to end (about 10 s at Deepgram), far inside the 10-minute limit. On a slow uplink lower it: the whole upload must finish inside `DEEPGRAM_TIMEOUT_MS`.
 - Longer ones need an **asynchronous callback**. A callback cannot reach `localhost`: it requires a publicly reachable URL
   (`DEEPGRAM_CALLBACK_BASE_URL`) that forwards to a separate tiny listener (`127.0.0.1:CALLBACK_PORT`) serving **only**
   `POST /deepgram-callback/:jobId`. Exposing that port is a deliberate, separately approved step; nothing else of the server is exposed.
@@ -505,6 +505,7 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 | Overlapping speech (14 s) | 2/2 | 2.5% | 1.3% | 84.6% |
 | Medical, 5 minutes (289 s) | 2/2 | 0.9% | 0.6% | 100% |
 | Medical, 30 minutes (1799 s, 392 turns) | 2/2 | 0.7% | 0.6% | 99.8% |
+| Medical, 2 hours (7197 s, 1568 turns) | **2/3** (see below) | 0.73% | 0.63% | 99.4% |
 | Silence / pink noise | no words, reported as no speech | | | |
 
 **Failures and limits, honestly:**
@@ -516,16 +517,21 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 - The review flag marked about 40% of segments in the 5-minute medical test (long content words below 0.85 confidence). It is a
   heuristic tuned on tiny synthetic data; the threshold is configurable (`REVIEW_WORD_CONFIDENCE`).
 - The evaluation audio is text-to-speech. Real microphones, accents, crosstalk and clinical noise are unevaluated.
-- Accuracy on a two-hour recording has NOT been tested against the real service (see below). The 30-minute recording was, and it is the same repeated conversation, so it shows scale, not variety.
+- The 30-minute and 2-hour recordings are the same synthetic conversation repeated, so they show scale, not variety.
+- **Two-hour recording: a speaker-count error.** Deepgram reported 3 speakers for a 2-person recording: the extra "speaker 3" is 10 stray segments (4.9 s of about 6,000 s, 0.08%), mostly single words such as "Your" or "and", scattered across the file, and it split one sentence in two. Overall accuracy was unaffected (DER 0.63%). Nothing is reassigned automatically; instead, a speaker with under 1% of the speech (and under 60 s) in a 3+ speaker result gets a `MINOR_SPEAKER_DETECTED` warning, and its segments are flagged `needsReview`, so the doctor can reassign them.
 
 ## Verified vs not yet verified
 
 Verified with real Deepgram and synthetic audio: the exact request; the real response shape, `diarize_info`, model reporting;
-30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise, a 5-minute and a **30-minute** recording through the full stack; job statuses; persistence and reopening. The 30-minute recording (1799 s) finished in 8.1 s end to end (FFmpeg verification, upload, Deepgram), inside the synchronous limit, with 2 stable speakers, WER 0.7%, DER 0.6%, timestamps to the end and no duplicated content. The server process itself grew by 54 MB (77 to 131 MB) while processing it, measured in a separate process, so streaming is bounded.
+30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise, 5-minute, **30-minute and 2-hour** recordings through the full stack; job
+statuses; persistence and reopening. The **2-hour** recording (7197 s, 1568 turns, 219 MB WAV) went through the real server in 29 s end to end
+(verify 2 s, upload 16 s, Deepgram 10 s), completed on the first attempt with model `medical-nova-3` and diarizer v2, WER 0.73%, DER 0.63%, all 224
+repetitions present once, timestamps 0.2 s to 7195 s with none going backwards, the recording deleted afterwards, and the server process grew by 110 MB
+(77 to 187 MB), measured in a separate process. Its one flaw is the spurious third speaker described above. The 30-minute recording took 8.1 s (server +54 MB).
 Verified with a stub (real captured responses): failure handling, retries, restart recovery, retention, callbacks and their authentication.
 Verified with real FFmpeg and a stub: a real 7200 s recording is accepted and a 7205 s one is rejected.
-**Not verified:** a **2-hour** recording against the real service (it should fit inside Deepgram's 10-minute synchronous limit given the 30-minute timing, but that is an estimate, not a result); callbacks against the real service (needs a public URL);
-real patient audio. A two-hour recording must not be assumed to work until that test has been run. Until then `DEEPGRAM_SYNC_MAX_SECONDS` stays at 1800 s, so anything longer is rejected before any audio is sent.
+**Not verified:** callbacks against the real service (needs a public URL, not needed at these speeds); recordings with real people, real microphones or
+clinical noise; whether an unusually slow uplink keeps a two-hour upload inside `DEEPGRAM_TIMEOUT_MS`. Real patient audio must not be used.
 
 ## Open coordination points (frontend)
 
