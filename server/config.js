@@ -16,7 +16,8 @@ export function loadConfig(env = process.env) {
     // or "deepgram" (opt-in cloud service). The public /api/transcribe is always local.
     sttEngine: env.STT_ENGINE === "deepgram" ? "deepgram" : "local",
     deepgramApiKey: env.DEEPGRAM_API_KEY ?? "",
-    deepgramModel: env.DEEPGRAM_MODEL ?? "nova-3",
+    // Nova-3 Medical: tuned for clinical vocabulary. English variants only.
+    deepgramModel: env.DEEPGRAM_MODEL ?? "nova-3-medical",
     deepgramBaseUrl: env.DEEPGRAM_BASE_URL ?? "https://api.deepgram.com",
     deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 60_000),
     port: intFromEnv(env, "PORT", 3001),

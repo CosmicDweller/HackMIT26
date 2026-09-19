@@ -10,7 +10,7 @@ import { afterEach, describe, test } from "node:test";
 import {
   fixtureSynthetic, leftoverFiles, makeAuth, makeConfig, makeFakeDiarizer, makeFakeWhisper, postAudio, readFixture, startServer, TEST_SUPABASE_URL,
 } from "./helpers.js";
-import { MAX_GAP_SECONDS, wordsToSegments } from "../services/deepgram.js";
+import { MAX_GAP_SECONDS, reportedModels, wordsToSegments } from "../services/deepgram.js";
 
 const KEY = "dg-test-key-NOT-A-REAL-KEY-12345";
 const cleanups = [];
@@ -27,6 +27,13 @@ const response = (words, { diarize = true } = {}) => ({
   results: { channels: [{ alternatives: [{ transcript: words.map((w) => w.punctuated_word).join(" "), words }] }] },
 });
 const TWO_SPEAKERS = response([word("Hello", 0.25, 0.9, 0), word("world.", 1.6, 2.4, 1)]);
+
+describe("reportedModels", () => {
+  test("reads model names from the response metadata", () => {
+    assert.deepEqual(reportedModels({ metadata: { model_info: { abc: { name: "medical-nova-3", version: "2025-01-01", arch: "nova-3" } } } }), ["medical-nova-3 2025-01-01"]);
+    assert.deepEqual(reportedModels({}), []);
+  });
+});
 
 describe("wordsToSegments", () => {
   test("groups consecutive words by speaker and keeps real word timestamps", () => {
@@ -129,7 +136,7 @@ describe("Deepgram engine (stub server)", () => {
     assert.equal(request.url.pathname, "/v1/listen");
     assert.equal(request.url.searchParams.get("mip_opt_out"), "true", "must opt out of model-improvement data use");
     assert.equal(request.url.searchParams.get("diarize_model"), "latest");
-    assert.equal(request.url.searchParams.get("model"), "nova-3");
+    assert.equal(request.url.searchParams.get("model"), "nova-3-medical", "Nova-3 Medical is the default model");
     assert.equal(request.url.searchParams.get("language"), "en");
     assert.equal(request.headers.authorization, `Token ${KEY}`);
     assert.ok(!request.url.search.includes(KEY), "the key must not be in the URL");
@@ -198,6 +205,18 @@ describe("Deepgram engine (stub server)", () => {
     const { upload } = await setup(json(200, TWO_SPEAKERS), { deepgramBaseUrl: "http://127.0.0.1:1" });
     const { body } = await upload();
     assert.equal(body.engine, "local");
+  });
+
+  test("the medical model is English-only: other languages use the local engine without contacting Deepgram", async () => {
+    const { upload, stub } = await setup(json(200, TWO_SPEAKERS), { whisperLanguage: "es" });
+    assert.equal((await upload()).body.engine, "local");
+    assert.equal(stub.requests.length, 0);
+  });
+
+  test("DEEPGRAM_MODEL can select a different model", async () => {
+    const { upload, stub } = await setup(json(200, TWO_SPEAKERS), { deepgramModel: "nova-3" });
+    assert.equal((await upload()).body.engine, "deepgram");
+    assert.equal(stub.requests[0].url.searchParams.get("model"), "nova-3");
   });
 
   test("no speech is a normal 422 and does not fall back or store anything", async () => {

@@ -85,7 +85,7 @@ if (!diarization.enabled) {
 
 console.log("\nSpeech engine");
 if (config.sttEngine === "deepgram") {
-  if (config.deepgramApiKey) warn("Deepgram is ON: audio from authenticated transcriptions leaves this machine (mip_opt_out=true)", "set STT_ENGINE=local to keep everything on this machine");
+  if (config.deepgramApiKey) warn(`Deepgram is ON (model ${config.deepgramModel}): audio from authenticated transcriptions leaves this machine (mip_opt_out=true)`, "set STT_ENGINE=local to keep everything on this machine");
   else warn("STT_ENGINE=deepgram but DEEPGRAM_API_KEY is empty: the local engine will be used");
 } else {
   ok("local (audio never leaves this machine)");

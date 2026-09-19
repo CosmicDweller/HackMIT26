@@ -57,6 +57,13 @@ export function wordsToSegments(words, { diarizeRan }) {
   return { segments, intervals };
 }
 
+/** Names of the model(s) Deepgram reports having used, from the response metadata. */
+export function reportedModels(result) {
+  const info = result?.metadata?.model_info;
+  if (!info || typeof info !== "object") return [];
+  return Object.values(info).map((model) => [model?.name, model?.version].filter(Boolean).join(" ")).filter(Boolean);
+}
+
 export function deepgramConfigured(config) {
   return config.sttEngine === "deepgram" && Boolean(config.deepgramApiKey);
 }
@@ -67,6 +74,16 @@ export function deepgramConfigured(config) {
  * requestCancelled when the client disconnects, and a 422 transcriptionFailed for "no speech".
  */
 export async function deepgramTranscribe(wavPath, config, { timeoutMs, signal } = {}) {
+  const result = await requestDeepgram(wavPath, config, { timeoutMs, signal });
+  return parseDeepgramResult(result);
+}
+
+/** POST the WAV to Deepgram and return the parsed JSON response. Throws DeepgramError / requestCancelled. */
+export async function requestDeepgram(wavPath, config, { timeoutMs, signal } = {}) {
+  // The medical model only supports English; anything else goes to the local engine instead.
+  if (/medical/.test(config.deepgramModel) && !/^en(-|$)/.test(config.whisperLanguage)) {
+    throw new DeepgramError("the medical model supports English only");
+  }
   const params = new URLSearchParams({
     model: config.deepgramModel,
     punctuate: "true",
@@ -91,12 +108,14 @@ export async function deepgramTranscribe(wavPath, config, { timeoutMs, signal } 
   }
   if (!response.ok) throw new DeepgramError(`http ${response.status}`); // never include the body: it may echo input
 
-  let result;
   try {
-    result = await response.json();
+    return await response.json();
   } catch {
     throw new DeepgramError("unparseable response");
   }
+}
+
+function parseDeepgramResult(result) {
   const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
   if (!alternative || !Array.isArray(alternative.words)) throw new DeepgramError("unexpected response shape");
 
@@ -107,6 +126,7 @@ export async function deepgramTranscribe(wavPath, config, { timeoutMs, signal } 
   return {
     text: segments.map((segment) => segment.text).join(" "),
     segments,
+    models: reportedModels(result),
     diarization: {
       // Diarization that did not run is reported as failed, never as a normal-looking result.
       status: diarizeRan ? "ok" : "failed",
