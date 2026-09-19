@@ -1,48 +1,61 @@
 # Progress
 
 ## Current milestone
-Project setup / interface definition. No application code written yet.
+Frontend (`client/`) functionally complete against a mock backend. Waiting on
+the real Express/whisper.cpp backend (branch `lz`) to connect to.
 
 ## Completed features
-- Frontend scaffold (`frontend/`): Vite + React + TypeScript + Tailwind v4 + shadcn/ui.
-- Core UI flow, wired end-to-end against mock data: voice enrollment (real
-  in-browser mic recording) → record patient visit (real mic recording) →
-  timestamped, speaker-labeled transcript → SOAP note with claims linking back
-  to specific transcript chunks.
-- Stub API client (`frontend/src/api/client.ts`) isolates the not-yet-defined
-  backend calls (enroll voice profile, upload recording, get transcript, get
-  SOAP note) so real endpoints can be swapped in without touching UI code.
+- `client/`: Vite + React + TypeScript + Tailwind v4 + shadcn/ui.
+- Full speech-to-text user journey, working end-to-end against an in-browser
+  mock: record (real mic capture via MediaRecorder, 60s cap, MIME
+  auto-detected via `isTypeSupported`) or upload (drag-drop + picker, 10MB
+  limit, type validation) → audio preview → transcribe → editable transcript
+  with copy / download-as-.txt / new-transcription.
+- All required app states implemented: idle, recording, audio-ready,
+  transcribing, success, error — including mic-permission-denied, unsupported
+  file, oversized file, network failure, and duplicate-submission guarding,
+  each with a clear message and a retry path.
+- `services/transcribeApi.ts` implements the real contract (`POST
+  /api/transcribe`, `GET /api/health`); `services/mockTranscribeApi.ts` is an
+  isolated, clearly-labeled mock (output is always prefixed
+  `[MOCK TRANSCRIPT — backend not connected]`) used while `VITE_USE_MOCK_API`
+  is unset/true. Switch to the real backend by setting
+  `VITE_USE_MOCK_API=false` in `client/.env.local` (see `client/.env.example`).
+- Vite dev server proxies `/api/*` to `http://localhost:3001`.
+- Verified in Chrome: full upload → transcribe → copy journey works, no
+  console errors, production build (`tsc -b && vite build`) and lint
+  (`oxlint`) both pass.
+
+## Note: product direction changed
+This branch previously scaffolded a different product (a doctor/patient
+SOAP-note app per the original CLAUDE.md). That work was replaced —
+`frontend/` was migrated and rebuilt into `client/` as a speech-to-text app
+per updated direction from the user. Root `CLAUDE.md` still describes the old
+SOAP-note product and has not been updated; flagging this so it doesn't
+mislead the backend agent or a future session.
 
 ## Remaining prioritized tasks
-1. Define API contract for the core pipeline (voice profiling, transcription,
-   LLM extraction, SOAP note generation) — only the unrelated TTS endpoint
-   (`API_contract.md`) is specified so far. Open question posted on issue #3.
-2. Scaffold backend (Express + TypeScript).
-3. Wire real voice profile generation, transcription, and SOAP generation
-   behind the existing stub API client.
+1. Backend agent to confirm `POST /api/transcribe` / `GET /api/health` match
+   what's implemented here (error codes: INVALID_AUDIO, FILE_TOO_LARGE,
+   TRANSCRIPTION_FAILED, SERVICE_UNAVAILABLE).
+2. Once backend is up on port 3001, set `VITE_USE_MOCK_API=false` and verify
+   the real journey end-to-end.
+3. Mobile-width layout not manually verified yet.
 4. Deploy to Vercel.
 
 ## Architectural decisions
-- Node.js/Express/TypeScript backend, React/Tailwind/shadcn frontend, Supabase only
-  if persistent storage is needed, Python for the voice-to-document ML model.
-- Frontend and backend are being built by separate collaborating agents,
-  coordinating via API contract docs and GitHub issue #3.
+- `client/` owned by the frontend agent (this branch, `kv`); backend owned by
+  the agent on branch `lz`. Coordinating via GitHub issue #3.
+- Frontend built independently against a mock so it doesn't block on the
+  backend; mock is isolated behind one flag/module for an easy swap.
 
 ## Known bugs and blockers
-- API contract only covers text-to-speech; the audio-in/transcript/SOAP-note
-  interface (the core product flow) is not yet defined. Frontend is built
-  against mock data in the meantime via a stub API client.
-- Mobile-width layout not manually verified (browser automation could not
-  resize the viewport this session); UI uses relative/flex-wrap classes only,
-  no fixed widths, so it should reflow, but this is unconfirmed.
+- None currently blocking. Backend not yet available to integrate against.
 
 ## Test and deployment status
-- No automated tests written. Manually verified in Chrome: enrollment screen
-  renders and records via MediaRecorder, SOAP note renders mock data, and
-  claim → transcript chunk deep links correctly scroll/highlight. Lint
-  (`oxlint`) and typecheck/build (`tsc -b && vite build`) pass. No deployment yet.
+- No automated tests. Manually verified in Chrome (upload → mock transcribe →
+  copy, no console errors). Lint and build both pass. No deployment yet.
 
 ## Next specific action
-Agree on the API contract for the transcription/SOAP-note pipeline with the
-backend agent (tracked on issue #3), then wire the stub API client to real
-endpoints.
+Coordinate with the backend agent on issue #3 to confirm the API contract,
+then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
