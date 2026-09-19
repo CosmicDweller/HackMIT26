@@ -7,8 +7,10 @@ const CATEGORY_LABEL: Record<ErrorCode, string> = {
   FILE_TOO_LARGE: "File too large",
   TRANSCRIPTION_FAILED: "Transcription failed",
   SERVICE_UNAVAILABLE: "Service unavailable",
-  UNAUTHORIZED: "Not signed in",
+  UNAUTHENTICATED: "Not signed in",
   NOT_FOUND: "Not found",
+  INVALID_REQUEST: "Invalid request",
+  SERVER_ERROR: "Server error",
   NETWORK_ERROR: "Connection problem",
   UNSUPPORTED_FILE: "Unsupported file",
 };

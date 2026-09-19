@@ -14,14 +14,18 @@ export function useCreateTranscription() {
   const inFlightRef = useRef(false);
 
   const create = useCallback(
-    async (audio: Blob, fileName: string): Promise<Transcription | null> => {
+    async (
+      audio: Blob,
+      fileName: string,
+      expectedSpeakers?: number,
+    ): Promise<Transcription | null> => {
       if (inFlightRef.current) return null; // guard against duplicate submissions
       inFlightRef.current = true;
       setCreating(true);
       setError(null);
 
       try {
-        return await transcriptions.create(audio, fileName);
+        return await transcriptions.create(audio, fileName, expectedSpeakers);
       } catch (err) {
         if (err instanceof TranscribeApiError) {
           setError({ message: err.message, code: err.code });

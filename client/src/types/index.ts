@@ -26,8 +26,10 @@ export type ApiErrorCode =
   | "FILE_TOO_LARGE"
   | "TRANSCRIPTION_FAILED"
   | "SERVICE_UNAVAILABLE"
-  | "UNAUTHORIZED"
-  | "NOT_FOUND";
+  | "UNAUTHENTICATED"
+  | "NOT_FOUND"
+  | "INVALID_REQUEST"
+  | "SERVER_ERROR";
 
 /** Client-only error codes for failures that never reach the API. */
 export type ClientErrorCode = "NETWORK_ERROR" | "UNSUPPORTED_FILE";

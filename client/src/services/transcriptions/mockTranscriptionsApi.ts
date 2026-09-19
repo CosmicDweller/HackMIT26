@@ -9,12 +9,12 @@ import {
 import type { Transcription } from "@/types";
 
 /**
- * MOCK transcriptions backend — the real /api/transcriptions* endpoints are
- * proposed on issue #3 and not built yet. Never analyzes the actual uploaded
- * audio; every transcript is the same clearly-labeled synthetic fixture, so
- * this can never be mistaken for a real diarization result. In-memory only —
- * nothing is written to localStorage, and it resets on page reload. Disable
- * via VITE_USE_MOCK_TRANSCRIPTIONS=false.
+ * MOCK transcriptions backend, matching the agreed contract (docs/API_CONTRACT.md
+ * v2 on branch lz). Never analyzes the actual uploaded audio; every transcript
+ * is the same clearly-labeled synthetic fixture, so this can never be mistaken
+ * for a real diarization result. In-memory only — nothing is written to
+ * localStorage, and it resets on page reload. Disable via
+ * VITE_USE_MOCK_TRANSCRIPTIONS=false.
  */
 
 interface StoredTranscription extends Transcription {
@@ -32,15 +32,10 @@ async function requireUserId(): Promise<string> {
   if (!session) {
     throw new TranscribeApiError({
       error: "You must be signed in.",
-      code: "UNAUTHORIZED",
+      code: "UNAUTHENTICATED",
     });
   }
   return session.id;
-}
-
-function computeReviewStatus(transcription: Transcription): Transcription["reviewStatus"] {
-  const hasUnassigned = transcription.speakers.some((s) => s.role === "unassigned");
-  return hasUnassigned ? "needs_review" : "reviewed";
 }
 
 function toPublic(record: StoredTranscription): Transcription {
@@ -68,6 +63,8 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
     await delay(undefined, 1800);
 
     const id = crypto.randomUUID();
+    // reviewStatus only ever changes via the explicit review() action below —
+    // never derived from speaker/segment edits, matching the real backend.
     const base: Transcription = {
       id,
       text: fixtureFullText(),
@@ -76,6 +73,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       createdAt: new Date().toISOString(),
       speakers: structuredClone(FIXTURE_SPEAKERS),
       segments: structuredClone(FIXTURE_SEGMENTS),
+      diarization: { status: "ok", speakerCount: FIXTURE_SPEAKERS.length },
     };
     store.set(id, { ...base, ownerId });
     return toPublic(store.get(id)!);
@@ -117,7 +115,6 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       throw new TranscribeApiError({ error: "Speaker not found.", code: "NOT_FOUND" });
     }
     speaker.role = role;
-    record.reviewStatus = computeReviewStatus(record);
     return toPublic(record);
   },
 
@@ -132,6 +129,14 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
     segment.text = patch.text;
     segment.speakerId = patch.speakerId;
     record.text = record.segments.map((s) => s.text).join(" ");
+    return toPublic(record);
+  },
+
+  async review(id) {
+    const ownerId = await requireUserId();
+    const record = await requireOwned(id, ownerId);
+    await delay(undefined, 300);
+    record.reviewStatus = "reviewed";
     return toPublic(record);
   },
 };

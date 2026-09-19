@@ -17,6 +17,13 @@ export interface TranscriptSegment {
 
 export type ReviewStatus = "needs_review" | "reviewed";
 
+export type DiarizationStatus = "ok" | "failed" | "unavailable";
+
+export interface DiarizationInfo {
+  status: DiarizationStatus;
+  speakerCount: number;
+}
+
 export interface Transcription {
   id: string;
   text: string;
@@ -25,6 +32,7 @@ export interface Transcription {
   createdAt: string;
   speakers: Speaker[];
   segments: TranscriptSegment[];
+  diarization: DiarizationInfo;
 }
 
 /** Metadata-only shape returned by the list endpoint. */

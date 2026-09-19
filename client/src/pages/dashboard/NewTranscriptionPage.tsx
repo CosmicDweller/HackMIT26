@@ -35,7 +35,8 @@ export function NewTranscriptionPage() {
 
   const runTranscribe = useCallback(async () => {
     if (!audio) return;
-    const result = await create(audio.blob, audio.fileName);
+    // A consultation is doctor + patient by default; helps the backend's speaker counting.
+    const result = await create(audio.blob, audio.fileName, 2);
     if (result) navigate(`/dashboard/transcripts/${result.id}`);
   }, [audio, create, navigate]);
 

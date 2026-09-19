@@ -51,7 +51,21 @@ export function useTranscriptionEditor(id: string) {
     [id, withSaving],
   );
 
+  const markReviewed = useCallback(
+    () => withSaving("review", () => transcriptions.review(id)),
+    [id, withSaving],
+  );
+
   const isSaving = useCallback((key: string) => savingIds.has(key), [savingIds]);
 
-  return { transcription, loadError, saveError, isSaving, updateSpeakerRole, updateSegment, reload: load };
+  return {
+    transcription,
+    loadError,
+    saveError,
+    isSaving,
+    updateSpeakerRole,
+    updateSegment,
+    markReviewed,
+    reload: load,
+  };
 }

@@ -1,4 +1,4 @@
-import { Download, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Download, Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ReviewStatusBadge } from "@/components/dashboard/ReviewStatusBadge";
@@ -14,8 +14,15 @@ import { transcriptions } from "@/services/transcriptions/transcriptionsService"
 export function TranscriptViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { transcription, loadError, saveError, isSaving, updateSpeakerRole, updateSegment } =
-    useTranscriptionEditor(id!);
+  const {
+    transcription,
+    loadError,
+    saveError,
+    isSaving,
+    updateSpeakerRole,
+    updateSegment,
+    markReviewed,
+  } = useTranscriptionEditor(id!);
 
   const dirtySegmentsRef = useRef(new Set<string>());
   const handleDirtyChange = useCallback((segmentId: string, dirty: boolean) => {
@@ -49,7 +56,7 @@ export function TranscriptViewerPage() {
     if (!transcription) return;
     if (transcription.reviewStatus !== "reviewed") {
       const proceed = window.confirm(
-        "This transcript hasn't been fully reviewed — some speakers are unassigned. " +
+        "This transcript hasn't been marked reviewed yet. " +
           "Exported text is unverified, auto-generated content, not confirmed clinical " +
           "documentation. Export anyway?",
       );
@@ -85,6 +92,16 @@ export function TranscriptViewerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {transcription.reviewStatus !== "reviewed" && (
+            <Button variant="outline" onClick={markReviewed} disabled={isSaving("review")}>
+              {isSaving("review") ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              Mark as reviewed
+            </Button>
+          )}
           <Button variant="outline" onClick={handleExport}>
             <Download className="size-4" />
             Export .txt
@@ -99,15 +116,27 @@ export function TranscriptViewerPage() {
       {transcription.reviewStatus !== "reviewed" && (
         <p className="rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           This is unreviewed, automatically generated text — not confirmed clinical
-          documentation. Assign every speaker below to mark it reviewed.
+          documentation. Confirm the speakers and segments below, then mark it reviewed.
         </p>
       )}
 
-      <SpeakerMappingPanel
-        speakers={transcription.speakers}
-        isSaving={isSaving}
-        onChangeRole={updateSpeakerRole}
-      />
+      {transcription.diarization.status !== "ok" ? (
+        <p className="flex items-center gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          Speaker detection {transcription.diarization.status === "unavailable"
+            ? "was unavailable"
+            : "failed"}{" "}
+          for this recording — assign speakers to segments manually below.
+        </p>
+      ) : (
+        transcription.speakers.length > 0 && (
+          <SpeakerMappingPanel
+            speakers={transcription.speakers}
+            isSaving={isSaving}
+            onChangeRole={updateSpeakerRole}
+          />
+        )
+      )}
 
       {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 

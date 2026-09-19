@@ -1,7 +1,7 @@
 import type { SpeakerRole, Transcription, TranscriptionSummary } from "@/types";
 
 export interface TranscriptionsApi {
-  create(audio: Blob, fileName: string): Promise<Transcription>;
+  create(audio: Blob, fileName: string, expectedSpeakers?: number): Promise<Transcription>;
   list(): Promise<TranscriptionSummary[]>;
   get(id: string): Promise<Transcription>;
   remove(id: string): Promise<void>;
@@ -11,4 +11,5 @@ export interface TranscriptionsApi {
     segmentId: string,
     patch: { text: string; speakerId: string | null },
   ): Promise<Transcription>;
+  review(id: string): Promise<Transcription>;
 }

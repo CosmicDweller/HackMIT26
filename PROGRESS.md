@@ -1,88 +1,98 @@
 # Progress
 
 ## Current milestone
-`client/` extended into a doctor-accounts + speaker-diarization workspace,
-built and fully demoable against in-memory mocks. Waiting on the backend
-agent to build the proposed `/api/transcriptions*` endpoints and confirm the
-auth provider (both proposed on issue #3).
+`client/` aligned with the agreed v2 contract (`docs/API_CONTRACT.md` on
+`lz`, PR #6). Real Supabase Auth is wired up in code but not yet turned on —
+waiting on the Supabase project URL/anon key from the owner.
 
 ## Completed features
 - Original single-speaker quick-transcribe flow (`/`) preserved unchanged —
   record/upload → transcribe → edit/copy/download, still against
   `POST /api/transcribe` (real or mock via `VITE_USE_MOCK_API`).
-- New doctor workspace, added alongside it:
-  - Auth: sign up, sign in, password reset request, sign out, loading state,
-    protected routes (redirect to `/login`, return to original destination
-    after sign-in). Provider-agnostic (`services/auth/authProvider.ts`)
-    behind a mock (`VITE_USE_MOCK_AUTH`) — in-memory only, session does not
-    survive a page reload (documented limitation of the mock, not the real
-    provider). Supabase Auth proposed on issue #3 as the real provider.
-  - Dashboard shell: sidebar (Dashboard / New transcription / Transcript
-    history / Account / Sign out), responsive (collapses to a top bar on
-    mobile).
-  - New transcription: reuses the existing record/upload components against
-    a new `transcriptions` service; recording-consent reminder shown before
-    every capture.
-  - Speaker-separated transcript viewer: colored per-speaker labels,
-    timestamps, "Who's who?" mapping (Doctor/Patient/Other/Unassigned per
-    speaker, updates every segment for that speaker), per-segment speaker
-    reassignment, inline segment text editing (autosave on blur + explicit
-    Save, saving/saved indicators, `beforeunload` guard while a segment is
-    dirty), review-status badge, unreviewed-content warning.
-  - Transcript history: list with date/duration/review status, open, delete
-    with confirmation.
-  - Export as `.txt` in the `Doctor [mm:ss]` / text format from the spec;
-    warns (via confirm) before exporting an unreviewed transcript.
-  - `services/transcriptions/`: real client matching the endpoints proposed
-    on issue #3, and an isolated mock (`VITE_USE_MOCK_TRANSCRIPTIONS`) that
-    always returns the same clearly-labeled synthetic consultation fixture —
-    never analyzes real audio content, so it can't be mistaken for a real
-    diarization result.
-- Fixed on backend agent's request: `ErrorBanner` now shows the server's
-  actual message prominently instead of a generic line burying it.
-- Verified in Chrome end-to-end: sign up → dashboard → new transcription
-  (upload) → speaker mapping → segment edit (autosave) → review status
-  flips to Reviewed → history list → sign out → protected-route redirect →
-  password-reset page. No console errors. Lint and production build both
-  pass.
+- Blue brand palette applied via design tokens (`client/src/index.css`) —
+  Egyptian Blue / Sapphire Sky / Glaucous / Baby Blue Ice / Pale Sky. Every
+  component already used semantic tokens (`bg-primary`, `ring-ring`, etc.),
+  so no component files needed changes. Status colors (amber/emerald) and
+  the multi-hue speaker palette were kept as-is — they're functional
+  signals, not brand styling.
+- Doctor workspace (dashboard, new transcription, speaker-separated
+  transcript viewer, history, export) — see prior entries; unchanged in
+  shape, now fixed to match the real backend contract:
+  - **List envelope**: `list()` now unwraps `{ transcriptions: [...] }`
+    instead of expecting a bare array.
+  - **204 on delete**: the request helper no longer tries to parse a body
+    for a 204 response (previously `remove()` would throw on every
+    successful delete).
+  - **Error codes**: renamed `UNAUTHORIZED` → `UNAUTHENTICATED` to match the
+    backend; added `INVALID_REQUEST` and `SERVER_ERROR`. On
+    `UNAUTHENTICATED` the client now calls `signOut()`, which flips auth
+    state and lets `ProtectedRoute` redirect to `/login` automatically.
+  - **Review status is no longer client-derived.** Previously the mock
+    flipped `reviewStatus` to `reviewed` automatically once every speaker
+    had a role — the real backend never does this. Added an explicit
+    "Mark as reviewed" button (`POST /api/transcriptions/:id/review`, no
+    body) and removed the auto-derivation from the mock so it matches.
+  - **`diarization.status`**: new field on the transcription resource
+    (`ok` | `failed` | `unavailable`). When not `ok`, the client shows
+    "speaker detection unavailable/failed — assign speakers manually"
+    instead of an empty or misleadingly-normal speaker view.
+  - **`expectedSpeakers`**: the new-transcription flow now sends
+    `expectedSpeakers=2` with the upload (a consultation is doctor +
+    patient by default), per the backend's note that it improves speaker
+    counting.
+  - Mock (`mockTranscriptionsApi.ts`) updated to match all of the above so
+    it still behaves like the real backend.
+- Real Supabase Auth provider added (`services/auth/supabaseAuthProvider.ts`,
+  `@supabase/supabase-js`), implementing the same `AuthProvider` interface
+  as the mock — sign up/in/out, password reset, session, and the access
+  token attached as `Authorization: Bearer` by the transcriptions API
+  client. Selected automatically when `VITE_USE_MOCK_AUTH=false`. **Not
+  testable yet** — needs `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from
+  the Supabase project the backend agent configured; asked for these on
+  issue #3.
+- Verified in Chrome (mock mode) after all the above: sign up → new
+  transcription → assign both speakers → review status correctly stays
+  "Needs review" (confirms the derivation bug is fixed) → "Mark as
+  reviewed" flips it → no console errors. Lint and production build pass.
 
 ## Remaining prioritized tasks
-1. Backend agent to confirm/build `/api/transcriptions*` (create, list, get,
-   delete, PATCH speakers, PATCH segments) and the Supabase Auth proposal —
-   posted on issue #3, awaiting reply.
-2. Once confirmed: wire `services/auth` to real Supabase, set
-   `VITE_USE_MOCK_AUTH=false` and `VITE_USE_MOCK_TRANSCRIPTIONS=false`,
-   verify against the real backend.
-3. Mobile-width layout not manually verified (same known limitation as
-   before — browser automation here can't reliably resize the viewport).
-4. Deploy to Vercel.
+1. Get `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` from the owner, set
+   `VITE_USE_MOCK_AUTH=false`, verify real sign-in end to end.
+2. Once backend PR #6 is merged/running locally, set
+   `VITE_USE_MOCK_TRANSCRIPTIONS=false` and verify the full flow against
+   the real diarization backend.
+3. Reply on issue #3: confirm the list-envelope shape (agreed — no change
+   needed), confirm wanting `POST /api/transcriptions/:id/review`
+   (implemented client-side already).
+4. Mobile-width layout not manually verified (same known limitation as
+   before).
+5. Deploy to Vercel.
 
 ## Architectural decisions
 - `client/` owned by the frontend agent (branch `kv`); backend owned by the
   agent on branch `lz`. Coordinating via issue #3.
 - Original quick-transcribe flow kept as-is at `/`, not merged into the new
-  authenticated flow, per "preserve existing functionality" — the new
-  dashboard flow is additive, not a replacement.
-- Auth and the new transcriptions API each sit behind their own
+  authenticated flow, per "preserve existing functionality."
+- Auth and the transcriptions API each sit behind their own
   provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
   `VITE_USE_MOCK_TRANSCRIPTIONS`), same pattern as the existing
-  `VITE_USE_MOCK_API`, so real backends swap in without UI changes.
+  `VITE_USE_MOCK_API` — real backends swap in without UI changes. Real
+  Supabase provider is written but gated on missing credentials.
 
 ## Known bugs and blockers
-- Mock auth session is in-memory only (resets on page reload) — acceptable
-  for the mock, but real Supabase will persist sessions properly.
-- Not a blocker, but noted: the real `/api/transcriptions*` endpoints don't
-  exist on the backend yet, so this whole feature runs on mocks until issue
-  #3 is resolved.
+- Real Supabase auth is implemented but unverified — blocked on project
+  credentials (asked for on issue #3).
+- `/api/transcriptions*` v2 is built on `lz`/PR #6 but not merged into
+  `main`; client still defaults to mocks for this feature.
 
 ## Test and deployment status
 - No automated tests. Manually verified in Chrome per the flow above. Lint
   (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Wait for the backend agent's reply on issue #3 (auth provider +
-`/api/transcriptions*` contract), then wire the real implementations behind
-the existing mock flags.
+Reply on issue #3 with the two open answers (list envelope, review
+endpoint) and ask for Supabase credentials; then verify against the real
+backend once both are available.
 
 ## Backend status (lz, speech-to-text)
 - `server/` implements `POST /api/transcribe` and `GET /api/health` per `docs/API_CONTRACT.md`
