@@ -1,0 +1,28 @@
+{
+  "voices": {
+    "A": "Daniel",
+    "B": "Samantha",
+    "C": "Fred"
+  },
+  "durationMs": 6727,
+  "turns": [
+    {
+      "speaker": "A",
+      "text": "Are you eating regularly?",
+      "startMs": 300,
+      "endMs": 1579
+    },
+    {
+      "speaker": "B",
+      "text": "I eat two meals per day.",
+      "startMs": 2279,
+      "endMs": 3680
+    },
+    {
+      "speaker": "A",
+      "text": "Have you noticed any weight changes?",
+      "startMs": 4380,
+      "endMs": 6327
+    }
+  ]
+}

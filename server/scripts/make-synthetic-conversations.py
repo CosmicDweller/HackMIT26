@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "synthetic"
-VOICES = {"A": "Daniel", "B": "Samantha"}  # A: British male, B: US female (clearly distinct)
+VOICES = {"A": "Daniel", "B": "Samantha", "C": "Fred"}  # A: British male, B: US female, C: US robotic male (clearly distinct)
 RATE = 16000
 
 # (speaker, text, gap_before_ms)
@@ -79,7 +79,43 @@ def build(name, turns, overlap_ms=0):
     print(f"{name}: {total / 1000:.1f}s, {len(truth)} turns")
 
 
+ABA = [
+    ("A", "Are you eating regularly?", 300),
+    ("B", "I eat two meals per day.", 700),
+    ("A", "Have you noticed any weight changes?", 700),
+]
+
+THREE = [
+    ("A", "Good morning. Thank you both for coming in.", 300),
+    ("B", "Good morning doctor. I have been very tired lately.", 700),
+    ("C", "She has not been sleeping well either.", 600),
+    ("A", "How many hours do you sleep each night?", 700),
+    ("B", "Maybe four or five hours.", 600),
+    ("C", "And she wakes up coughing.", 500),
+    ("A", "I will order a sleep study.", 600),
+]
+
+# Synthetic medical vocabulary (no real patient data). Numbers are spoken as words.
+MEDICAL = [
+    ("A", "Good morning. How long have you had the shortness of breath?", 300),
+    ("B", "About two weeks, and I feel dizzy when I stand up.", 700),
+    ("A", "Are you still taking metformin five hundred milligrams twice daily?", 700),
+    ("B", "Yes, and lisinopril ten milligrams once daily.", 700),
+    ("A", "Your hemoglobin A1c was seven point two percent. I will increase the atorvastatin to forty milligrams.", 700),
+    ("B", "Should I be worried about the chest pain?", 700),
+    ("A", "Any chest pain with exertion needs an electrocardiogram today.", 700),
+]
+
+SETS = {
+    "two-speaker": lambda: build("two-speaker", CONSULT),
+    "single-speaker": lambda: build("single-speaker", [t for t in CONSULT if t[0] == "A"]),
+    "overlap": lambda: build("overlap", CONSULT, overlap_ms=900),
+    "aba": lambda: build("aba", ABA),
+    "three-speaker": lambda: build("three-speaker", THREE),
+    "medical": lambda: build("medical", MEDICAL),
+}
+
 if __name__ == "__main__":
-    build("two-speaker", CONSULT)
-    build("single-speaker", [t for t in CONSULT if t[0] == "A"])
-    build("overlap", CONSULT, overlap_ms=900)
+    import sys
+    for name in sys.argv[1:] or list(SETS):
+        SETS[name]()

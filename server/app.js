@@ -5,6 +5,8 @@ import { openStore } from "./db/store.js";
 import { createAuthenticator } from "./middleware/auth.js";
 import { createTranscribeRouter } from "./routes/transcribe.js";
 import { createTranscriptionsRouter } from "./routes/transcriptions.js";
+import { createJobsRouter } from "./routes/jobs.js";
+import { createJobManager } from "./services/jobs.js";
 import { createPipeline } from "./services/pipeline.js";
 
 /**
@@ -21,11 +23,15 @@ export function createApp(config, overrides = {}) {
 
   const store = overrides.store ?? openStore(config.dbPath);
   const authenticate = createAuthenticator(config, { jwks: overrides.jwks, store });
-  app.use("/api/transcriptions", createTranscriptionsRouter(config, pipeline, store, authenticate));
+  // Every authenticated recording goes through the persistent job system.
+  const jobs = createJobManager({ config, store, pipeline });
+  app.use("/api/transcriptions", createTranscriptionsRouter(config, jobs, store, authenticate));
+  app.use("/api/transcription-jobs", createJobsRouter(config, jobs, store, authenticate));
   app.get("/api/me", authenticate, (req, res) => {
     res.json({ id: req.user.id, email: req.user.email, displayName: req.user.displayName, credentialsVerified: false });
   });
   app.use(errorHandler);
   app.locals.store = store;
+  app.locals.jobs = jobs;
   return app;
 }

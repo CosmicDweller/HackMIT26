@@ -85,11 +85,23 @@ if (!diarization.enabled) {
 
 console.log("\nSpeech engine");
 if (config.sttEngine === "deepgram") {
-  if (config.deepgramApiKey) warn(`Deepgram is ON (model ${config.deepgramModel}): audio from authenticated transcriptions leaves this machine (mip_opt_out=true)`, "set STT_ENGINE=local to keep everything on this machine");
-  else warn("STT_ENGINE=deepgram but DEEPGRAM_API_KEY is empty: the local engine will be used");
+  if (config.deepgramApiKey) {
+    warn(
+      `Deepgram (${config.deepgramModel}, diarize_model=${config.deepgramDiarizeModel}) is the primary engine: audio from signed-in recordings leaves this machine (mip_opt_out=true)`,
+      "set STT_ENGINE=local to use the whisper.cpp fallback instead (short recordings only)",
+    );
+  } else {
+    fail("STT_ENGINE is deepgram (the default) but DEEPGRAM_API_KEY is empty: recordings will fail", "set DEEPGRAM_API_KEY in server/.env, or STT_ENGINE=local");
+  }
+  console.log(`  info  recordings up to ${config.maxRecordingSeconds} s and ${Math.round(config.maxRecordingBytes / 1048576)} MB are accepted; synchronous Deepgram requests up to ${config.deepgramSyncMaxSeconds} s`);
+  if (config.deepgramCallbackBaseUrl) warn(`callbacks enabled for longer recordings (listener 127.0.0.1:${config.callbackPort}, public URL ${new URL(config.deepgramCallbackBaseUrl).host})`, "only expose that one port, and only with synthetic data");
+  else console.log("  info  callbacks are off: recordings longer than the synchronous limit are rejected before any audio is sent");
 } else {
-  ok("local (audio never leaves this machine)");
+  ok("local whisper.cpp fallback (audio never leaves this machine; short recordings only)");
 }
+if (await executableExists(config.ffprobeBin)) ok(`${config.ffprobeBin} found (recording validation)`);
+else fail("ffprobe not found (it ships with FFmpeg)", "brew install ffmpeg   (or set FFPROBE_BIN)");
+console.log(`  info  recordings are stored in ${path.relative(serverDir, config.uploadDir)} until processed (failed jobs: ${config.audioRetentionHours} h)`);
 
 console.log("\nAccounts");
 if (config.supabaseUrl) {

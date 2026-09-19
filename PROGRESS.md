@@ -136,13 +136,13 @@ Decide on deployment: client to Vercel, backend to a machine that can run
 whisper.cpp + the diarization venv (per backend's tunnel plan).
 
 ## Backend status (lz)
-- v1 (`POST /api/transcribe`, `GET /api/health`) is merged and unchanged. See `docs/API_CONTRACT.md`.
-- v2 (agreed on issue #3): speaker diarization (local sherpa-onnx), Supabase Auth JWT
-  verification, and per-doctor transcript storage (local SQLite) with speaker roles, segment corrections, history
-  and deletion. 120 backend tests pass (1 live Deepgram test skipped without a key), including real diarization and a real end-to-end run on synthetic
-  two-voice conversations (8/8 turns correct; overlapping speech is a known weak spot).
-- Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor`.
-- Optional Deepgram cloud engine (STT_ENGINE=deepgram, model nova-3-medical, verified live with synthetic audio; sends audio to a third party).
-- Review confirmation (`POST /api/transcriptions/:id/review`) is implemented (frontend agreed on #3).
-- **Merged into `main` (593bb45).** Contract v2 marked agreed in `docs/API_CONTRACT.md`.
-- Not done / needs decisions: pyannote Community-1 benchmark (gated model), deployment (laptop + tunnel). Synthetic data only.
+- v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
+- v3 (merged into `main`, commit 3eca76d): **Deepgram Nova-3 Medical + the latest batch diarizer is the primary engine**, with a persistent job system
+  (`/api/transcription-jobs*`), file-backed recordings up to 2 hours, `needsReview` flags, `diarizationStatus`, and a secured (off by
+  default) callback listener for long recordings. whisper.cpp remains an optional fallback (`STT_ENGINE=local`).
+- Verified live with synthetic audio: exact request, model `medical-nova-3`, diarizer v2, A-B-A / 3-speaker / 5-minute recordings
+  through the full stack, including **30-minute and 2-hour recordings** (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
+  misattributes a sentence, and the 2-hour recording produced a spurious 3rd speaker (0.08% of speech; now flagged with a warning, not reassigned).
+  Synchronous limit default raised to 2 h. **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
+- Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
+- Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

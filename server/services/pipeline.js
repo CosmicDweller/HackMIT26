@@ -2,14 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { invalidAudio, requestCancelled, serviceUnavailable } from "../lib/errors.js";
 import { convertToWav } from "./audio.js";
-import { deepgramConfigured, deepgramTranscribe, DeepgramError } from "./deepgram.js";
 import { diarizeWav } from "./diarization.js";
 import { createLimiter } from "./limiter.js";
 import { checkReadiness } from "./readiness.js";
 import { transcribeWav } from "./whisper.js";
 
 /**
- * The shared processing pipeline: validate -> FFmpeg normalize -> whisper.cpp
+ * The LOCAL processing pipeline (whisper.cpp + sherpa-onnx): validate -> FFmpeg normalize -> whisper.cpp
  * (+ optional speaker diarization in parallel) -> cleanup. One concurrency limiter covers every
  * route so total inference load stays bounded.
  */
@@ -52,21 +51,6 @@ export function createPipeline(config) {
         return { text, durationSeconds, segments };
       }
 
-      // Opt-in cloud engine, only for the authenticated route. Any service problem falls back to the
-      // local engine (data stays local), so a Deepgram outage never blocks a consultation.
-      if (deepgramConfigured(config)) {
-        try {
-          const result = await deepgramTranscribe(wavPath, config, {
-            timeoutMs: Math.min(remainingMs(), config.deepgramTimeoutMs),
-            signal,
-          });
-          return { text: result.text, segments: result.segments, durationSeconds, diarization: result.diarization, engine: "deepgram" };
-        } catch (error) {
-          if (!(error instanceof DeepgramError)) throw error; // no-speech (422) and client disconnects
-          console.error(`deepgram unavailable (${error.message}); using the local engine`);
-        }
-      }
-
       // allSettled (not all): if transcription fails, still wait for the diarization process to
       // end so nothing is running when the work directory is deleted.
       const [transcript, speakers] = await Promise.allSettled([
@@ -79,7 +63,7 @@ export function createPipeline(config) {
       ]);
       if (transcript.status === "rejected") throw transcript.reason;
       if (speakers.status === "rejected") throw speakers.reason; // only a client disconnect
-      return { ...transcript.value, durationSeconds, diarization: speakers.value, engine: "local" };
+      return { ...transcript.value, durationSeconds, diarization: speakers.value };
     } finally {
       release();
       if (workDir) await rm(workDir, { recursive: true, force: true });
