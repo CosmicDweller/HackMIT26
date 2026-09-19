@@ -98,6 +98,7 @@ export function QuickTranscribePage() {
                     status={recorder.status}
                     elapsedSeconds={recorder.elapsedSeconds}
                     permissionDenied={recorder.permissionDenied}
+                    interrupted={recorder.interrupted}
                     error={recorder.error}
                     onStart={recorder.start}
                     onStop={recorder.stop}

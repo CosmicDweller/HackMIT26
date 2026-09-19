@@ -60,7 +60,10 @@ export function NewTranscriptionPage() {
           <p className="mb-4 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
             Reminder: make sure you have the patient's consent to record. This reminder
             doesn't by itself satisfy your institution's or jurisdiction's recording
-            requirements — that's on you to confirm.
+            requirements — that's on you to confirm. Audio may be processed by an
+            external speech-recognition provider depending on backend configuration
+            (shown on each transcript as "processed locally" or "processed by
+            Deepgram"); this app is not HIPAA-compliant.
           </p>
 
           {appState === "error" && error && (
@@ -88,6 +91,7 @@ export function NewTranscriptionPage() {
                   status={recorder.status}
                   elapsedSeconds={recorder.elapsedSeconds}
                   permissionDenied={recorder.permissionDenied}
+                  interrupted={recorder.interrupted}
                   error={recorder.error}
                   onStart={recorder.start}
                   onStop={recorder.stop}

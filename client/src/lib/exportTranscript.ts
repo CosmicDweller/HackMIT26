@@ -22,7 +22,7 @@ export function formatTranscriptForExport(
     .map((segment) => {
       const label = segment.speakerId
         ? speakerDisplayLabel(byId.get(segment.speakerId))
-        : "Unclear speaker";
+        : "Unknown speaker";
       const timestamp = formatSeconds(segment.startMs / 1000);
       return `${label} [${timestamp}]\n${segment.text}`;
     })

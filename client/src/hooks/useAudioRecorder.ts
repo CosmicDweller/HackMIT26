@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RecorderStatus = "idle" | "requesting" | "recording" | "stopped";
 
-export const MAX_RECORDING_SECONDS = 60;
+/** 2 hours — consultations can run long. Backend limits may still be lower; see docs/API_CONTRACT.md. */
+export const MAX_RECORDING_SECONDS = 7200;
+
+/** Show a "running out of time" warning in the last 5 minutes. */
+export const RECORDING_WARNING_THRESHOLD_SECONDS = MAX_RECORDING_SECONDS - 300;
 
 const CANDIDATE_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -27,6 +31,8 @@ export function useAudioRecorder() {
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the mic/track was lost mid-recording (device unplugged, OS revoked permission, etc). */
+  const [interrupted, setInterrupted] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -36,7 +42,10 @@ export function useAudioRecorder() {
   const mimeTypeRef = useRef<string>("audio/webm");
 
   const cleanupStream = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current?.getTracks().forEach((track) => {
+      track.onended = null;
+      track.stop();
+    });
     streamRef.current = null;
   }, []);
 
@@ -57,6 +66,7 @@ export function useAudioRecorder() {
   const start = useCallback(async () => {
     setError(null);
     setPermissionDenied(false);
+    setInterrupted(false);
     setRecordedAudio(null);
     chunksRef.current = [];
     setStatus("requesting");
@@ -71,6 +81,15 @@ export function useAudioRecorder() {
         ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
+
+      // Device unplugged, OS revoked the mic, or the browser killed the track — stop
+      // gracefully so whatever was already captured (via ondataavailable) is preserved.
+      stream.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          setInterrupted(true);
+          stop();
+        };
+      });
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -117,6 +136,7 @@ export function useAudioRecorder() {
     setRecordedAudio(null);
     setError(null);
     setPermissionDenied(false);
+    setInterrupted(false);
   }, [clearTimer, cleanupStream]);
 
   useEffect(() => {
@@ -131,6 +151,7 @@ export function useAudioRecorder() {
     elapsedSeconds,
     recordedAudio,
     permissionDenied,
+    interrupted,
     error,
     start,
     stop,

@@ -1,12 +1,59 @@
 # Progress
 
 ## Current milestone
-**Full stack verified end-to-end against the real backend.** PR #6 (backend
-v2: diarization, Supabase Auth, per-doctor transcripts) is merged into
-`main`. `kv` is merged with `main`, `VITE_USE_MOCK_AUTH=false` and
-`VITE_USE_MOCK_TRANSCRIPTIONS=false`, and the whole doctor workspace was run
-for real — real sign-in, real whisper.cpp transcription, real local
-diarization — with zero console errors.
+**Full stack verified end-to-end against the real backend** (previous
+entry), plus frontend prep for the Deepgram Nova-3 Medical migration
+(2-hour recordings, 3+ speaker support). The big pieces of that migration —
+async job workflow and chunked/resumable upload — need new backend
+endpoints that don't exist yet; proposed on issue #3 rather than built
+against invented ones. See "Deepgram migration" below.
+
+## Deepgram migration (in progress, coordinating with backend)
+Requirements: Nova-3 Medical, Batch Diarization v2, up to 2-hour recordings,
+3+ speaker support, async processing. Posted a coordination proposal on
+issue #3 covering what only the backend can do: raised upload/duration
+limits (current contract caps at 10 MB / 60 s — a 2-hour recording won't
+fit), an async job workflow (`POST` returns a job id immediately; frontend
+polls `queued|uploading|preparing|transcribing|completed|failed` until
+done), and chunked/resumable upload. Proposed keeping the current
+`speaker_N`/`diarization.status` vocabulary (already implemented, already
+verified against real data) rather than switching to the prompt's
+`speaker_0`-indexed / `diarizationStatus` naming, since the client already
+treats speaker ids as opaque strings — asked backend to confirm or push
+back.
+
+**Built now, independent of the above (backward compatible, no backend
+change needed):**
+- Recording duration bumped from 60s to 7200s (2 hours). Timer switched to
+  a proper `HH:MM:SS` clock (`lib/format.ts`: `formatClock`), with a
+  warning banner in the last 5 minutes and a "keep this tab open / computer
+  awake" notice while recording. Elapsed time was already computed from
+  wall-clock `Date.now()` deltas (not tick-counting), so no drift-related
+  change was needed there.
+- Mic/track interruption handling: if the microphone track ends
+  unexpectedly (unplugged, OS revoked permission, etc.), recording stops
+  gracefully and whatever was captured so far is preserved and surfaced to
+  the user, rather than silently losing it or crashing.
+- Verified 3+ speaker support has no hardcoded 2-speaker assumption —
+  extended the shared mock fixture with a third speaker (a nurse stepping
+  in briefly) rather than a throwaway test, so it's a permanent, realistic
+  demonstration. Rendered correctly: distinct color per speaker, correct
+  per-segment attribution, independent role mapping per speaker.
+- Null `speakerId` now displays exactly "Unknown speaker" (was "Speaker
+  unclear"), matching the spec's wording, in both the transcript view and
+  the `.txt` export.
+- Consent reminder on the new-transcription page now also notes that audio
+  may be processed by an external speech-recognition provider depending on
+  backend configuration, and restates the app is not HIPAA-compliant.
+
+**Deliberately not built yet** (would require inventing an API the backend
+hasn't designed, which the brief explicitly warns against): chunked/
+resumable upload, async job-status polling UI, and the automated test
+suite for job-workflow scenarios (queued/uploading/preparing/transcribing,
+upload interruption/recovery). Once the backend lands real endpoints for
+these, building and verifying them for real (same pattern as the v2
+diarization work) is fast — the slow part was always waiting for a stable
+contract to build against, not the UI work itself.
 
 ## Completed features
 - Original single-speaker quick-transcribe flow (`/`) preserved unchanged —

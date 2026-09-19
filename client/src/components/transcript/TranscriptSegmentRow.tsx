@@ -77,7 +77,7 @@ export function TranscriptSegmentRow({
         ) : (
           <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
             <AlertTriangle className="size-3" />
-            Speaker unclear
+            Unknown speaker
           </span>
         )}
         <span className="text-xs text-muted-foreground">
@@ -91,7 +91,7 @@ export function TranscriptSegmentRow({
           className="ml-auto rounded-md border border-input bg-transparent px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:border-ring disabled:opacity-50"
           aria-label="Reassign speaker for this segment"
         >
-          <option value="">Unclear</option>
+          <option value="">Unknown</option>
           {speakers.map((s) => (
             <option key={s.id} value={s.id}>
               {speakerDisplayLabel(s)}

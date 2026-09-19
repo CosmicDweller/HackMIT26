@@ -1,12 +1,17 @@
-import { Mic, Square } from "lucide-react";
-import { MAX_RECORDING_SECONDS, type RecorderStatus } from "@/hooks/useAudioRecorder";
-import { formatSeconds } from "@/lib/format";
+import { AlertTriangle, Mic, Square } from "lucide-react";
+import {
+  MAX_RECORDING_SECONDS,
+  RECORDING_WARNING_THRESHOLD_SECONDS,
+  type RecorderStatus,
+} from "@/hooks/useAudioRecorder";
+import { formatClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface RecordPanelProps {
   status: RecorderStatus;
   elapsedSeconds: number;
   permissionDenied: boolean;
+  interrupted: boolean;
   error: string | null;
   onStart: () => void;
   onStop: () => void;
@@ -16,12 +21,13 @@ export function RecordPanel({
   status,
   elapsedSeconds,
   permissionDenied,
+  interrupted,
   error,
   onStart,
   onStop,
 }: RecordPanelProps) {
   const isRecording = status === "recording";
-  const nearLimit = elapsedSeconds >= MAX_RECORDING_SECONDS - 10;
+  const nearLimit = elapsedSeconds >= RECORDING_WARNING_THRESHOLD_SECONDS;
 
   return (
     <div className="flex flex-col items-center gap-5 py-6">
@@ -50,9 +56,9 @@ export function RecordPanel({
           nearLimit ? "text-destructive" : "text-foreground",
         )}
       >
-        {formatSeconds(elapsedSeconds)}{" "}
+        {formatClock(elapsedSeconds)}{" "}
         <span className="text-sm text-muted-foreground">
-          / {formatSeconds(MAX_RECORDING_SECONDS)}
+          / {formatClock(MAX_RECORDING_SECONDS)}
         </span>
       </div>
 
@@ -64,10 +70,33 @@ export function RecordPanel({
             : "Tap the microphone to start recording."}
       </p>
 
+      {isRecording && nearLimit && (
+        <p className="flex items-center gap-1.5 text-sm text-destructive">
+          <AlertTriangle className="size-4 shrink-0" />
+          Approaching the {formatClock(MAX_RECORDING_SECONDS)} limit — recording
+          will stop automatically.
+        </p>
+      )}
+
+      {isRecording && (
+        <p className="max-w-sm text-center text-xs text-muted-foreground">
+          Keep this tab open and your computer awake for the whole
+          consultation — recording stops if the tab closes or the computer
+          sleeps.
+        </p>
+      )}
+
       {permissionDenied && (
         <p className="max-w-sm text-center text-sm text-destructive">
           Microphone access was denied. Allow microphone permission for this
           site in your browser settings, then try again.
+        </p>
+      )}
+      {interrupted && (
+        <p className="max-w-sm text-center text-sm text-destructive">
+          Recording was interrupted (microphone disconnected or permission
+          revoked). What was captured before the interruption is preserved
+          below — review it, or start over.
         </p>
       )}
       {error && (
