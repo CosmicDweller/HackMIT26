@@ -1,5 +1,6 @@
 import { authProvider } from "@/services/auth";
 import { TranscribeApiError } from "@/services/transcribeApi";
+import { isEnrolled } from "@/services/voiceProfile/mockVoiceProfileStore";
 import {
   FIXTURE_SEGMENTS,
   FIXTURE_SPEAKERS,
@@ -64,6 +65,15 @@ export function createMockTranscription(ownerId: string): Transcription {
   const minorSpeaker = segments.find((s) => s.speakerId === "speaker_3");
   if (minorSpeaker) minorSpeaker.needsReview = true;
 
+  const speakers = structuredClone(FIXTURE_SPEAKERS);
+  // Only suggest a voice match when the doctor has actually enrolled a profile — the
+  // suggestion is advisory (identificationStatus), never auto-assigned to `role`.
+  const enrolled = isEnrolled(ownerId);
+  if (enrolled) {
+    speakers[0].identificationStatus = "matched";
+    for (let i = 1; i < speakers.length; i++) speakers[i].identificationStatus = "unknown";
+  }
+
   // reviewStatus only ever changes via the explicit review action — never
   // derived from speaker/segment edits, matching the real backend.
   const transcription: Transcription = {
@@ -73,11 +83,12 @@ export function createMockTranscription(ownerId: string): Transcription {
     reviewStatus: "needs_review",
     createdAt: new Date().toISOString(),
     engine: "local",
-    speakers: structuredClone(FIXTURE_SPEAKERS),
+    speakers,
     segments,
     diarization: { status: "ok", speakerCount: FIXTURE_SPEAKERS.length },
     status: "completed",
     diarizationStatus: "completed",
+    voiceIdentificationStatus: enrolled ? "completed" : "unavailable",
     warnings: minorSpeaker
       ? [
           {

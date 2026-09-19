@@ -1,11 +1,60 @@
 # Progress
 
 ## Current milestone
-**Deepgram/job-system migration (Contract v3) is built and verified against
-the real, merged backend.** Backend delivered the whole thing in one pass
-(job endpoints, 2h/1GiB recordings, `warnings`, `needsReview`,
-`diarizationStatus`) — ahead of the coordination proposal below, so the
-client caught up to match rather than the other way around.
+**Doctor voice enrollment + voice-assisted speaker ID, built client-side
+against a mock, coordination proposal posted on issue #3.** No backend
+support exists yet for this — unlike the Deepgram migration, this time the
+client is ahead and waiting on the backend agent.
+
+## Voice enrollment — client built, mock-only, awaiting backend
+Proposed contract posted to issue #3 (`GET/POST/DELETE /api/me/voice-profile*`,
+additive `Speaker.identificationStatus` and `Transcription.voiceIdentificationStatus`
+fields — see the comment for the full shape). Everything below runs against
+`services/voiceProfile/mockVoiceProfileApi.ts` (`VITE_USE_MOCK_VOICE_PROFILE`,
+defaults to mock since the real endpoints don't exist) and is real-backend-safe:
+every new field is optional, so nothing breaks against the actual server today.
+
+- **Enrollment wizard** (`/dashboard/voice-profile`): explanation, an
+  explicit unchecked-by-default consent checkbox (nothing records before
+  consent), recording instructions, 3 sample recordings reusing the existing
+  `useAudioRecorder` hook (auto-stops at 20s, no duplicate mic-management
+  code), per-sample playback/re-record/delete, then submit. Success screen
+  offers "Go to Dashboard" / "Manage Voice Profile".
+- **Account settings**: a Voice Profile card with not-enrolled / enrolled
+  (enrollment date + model version, Replace/Delete) / needs-reenrollment
+  states. Delete requires a confirm dialog and warns that it disables
+  automatic doctor matching.
+- **Dashboard onboarding banner**: "Set Up Your Voice Profile" /
+  "Skip for Now", shown only while not enrolled, dismissal persisted in
+  localStorage per user. Skipping never blocks recording or transcription.
+- **New Transcription page**: a small availability notice ("Doctor voice
+  matching is available" vs. "unavailable until a voice profile is
+  created" with a link to set one up) — informational only, never blocks
+  the existing record/upload flow.
+- **Transcript display**: `SpeakerMappingPanel` shows a distinct "Suggested:
+  Doctor — voice match detected (unconfirmed)" hint for a matched, still-
+  unassigned speaker, and "Needs confirmation" otherwise — the suggestion is
+  never auto-applied to `role`; the doctor still confirms via the existing
+  role buttons. `speakerDisplayLabel` (`lib/exportTranscript.ts`) renders
+  "Unknown Speaker N" for an unassigned speaker once identification has
+  run and found no match, unchanged ("Speaker N") when the field is absent
+  (today's real backend). The mock transcript fixture only sets these
+  fields when the signed-in doctor has actually enrolled, so the demo never
+  implies a match that didn't happen.
+- **Not implemented**: `nurse`/`family member` roles suggested by the brief
+  — not sending role values the backend hasn't agreed to (existing contract
+  rule). Live microphone recording could not be verified through browser
+  automation (native mic-permission prompts are outside what the Chrome
+  extension can click through, unlike in-page `confirm()` dialogs) — the
+  recording UI was verified visually, and the enroll/get/delete round trip
+  and every downstream display state were verified for real by driving the
+  same mock service functions the UI calls, in the page's own JS context.
+
+## Previous milestone — Deepgram/job-system migration (Contract v3)
+Built and verified against the real, merged backend. Backend delivered the
+whole thing in one pass (job endpoints, 2h/1GiB recordings, `warnings`,
+`needsReview`, `diarizationStatus`) — ahead of the coordination proposal
+below, so the client caught up to match rather than the other way around.
 
 ## Deepgram migration — done
 Client now uses `POST /api/transcription-jobs` (not the old synchronous
@@ -114,16 +163,18 @@ With the client pointed at it for real:
 - Zero console errors at any step of the whole session.
 
 ## Remaining prioritized tasks
-1. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
+1. Backend agreement on the voice-enrollment contract (issue #3 comment
+   posted) — the whole feature is mock-only until the endpoints exist.
+2. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
    (tested via the local fallback through the same job endpoints so far).
-2. Automated test suite (Playwright/Vitest) for the scenarios in the brief
+3. Automated test suite (Playwright/Vitest) for the scenarios in the brief
    — deferred until now because the job-workflow contract was still
    changing; it's stable now, so this is a reasonable next step.
-3. Mobile-width layout not manually verified (browser automation here
+4. Mobile-width layout not manually verified (browser automation here
    can't reliably resize the viewport).
-4. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
+5. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
    per backend's plan, since Vercel can't run whisper.cpp).
-5. Optional: surface `GET /api/me` somewhere (not required by any current
+6. Optional: surface `GET /api/me` somewhere (not required by any current
    screen).
 
 ## Architectural decisions
@@ -134,25 +185,32 @@ With the client pointed at it for real:
 - Auth and the transcriptions API each sit behind their own
   provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
   `VITE_USE_MOCK_TRANSCRIPTIONS`) — both now flipped to `false` locally
-  since the real backend is verified working.
+  since the real backend is verified working. Voice profile follows the
+  same provider-agnostic + mock-flag pattern (`VITE_USE_MOCK_VOICE_PROFILE`,
+  currently mock-only since the backend doesn't have this yet).
 
 ## Known bugs and blockers
-- None currently. Both mock flags can stay `false` for local dev/demo as
-  long as `server/` is running with models set up. `server/.env` needs
-  `DEEPGRAM_API_KEY` for the real Deepgram engine — without it, set
-  `STT_ENGINE=local` to use the whisper.cpp fallback (what this session's
-  testing used).
+- Voice enrollment has no backend support yet — mock-only, see above.
+  Everything else: no known bugs. Both mock flags can stay `false` for
+  local dev/demo as long as `server/` is running with models set up.
+  `server/.env` needs `DEEPGRAM_API_KEY` for the real Deepgram engine —
+  without it, set `STT_ENGINE=local` to use the whisper.cpp fallback (what
+  this session's testing used).
 
 ## Test and deployment status
 - No automated tests on the client. Full manual pass against the real,
   merged v3 backend today (job creation, polling, completion, warnings,
   needsReview, resume-unfinished-job) plus earlier real-auth and v2 passes.
+  Voice enrollment verified against the mock only (enroll/get/delete round
+  trip, all account/dashboard/transcript display states) — see "Not
+  implemented" above for what live browser automation couldn't cover.
   Lint (`oxlint`) and build (`tsc -b && vite build`) both pass. No
   deployment yet.
 
 ## Next specific action
-Get a Deepgram API key to verify the real engine, then decide on
-deployment: client to Vercel, backend to a machine that can run
+Wait for the backend agent's response to the voice-enrollment proposal on
+issue #3; meanwhile get a Deepgram API key to verify the real engine, then
+decide on deployment: client to Vercel, backend to a machine that can run
 whisper.cpp/Deepgram + the diarization venv (per backend's tunnel plan).
 
 ## Backend status (lz)

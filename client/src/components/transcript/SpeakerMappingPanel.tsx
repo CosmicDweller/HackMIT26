@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { speakerColor } from "@/lib/speakerColors";
 import { cn } from "@/lib/utils";
 import type { Speaker, SpeakerRole } from "@/types";
@@ -40,6 +40,15 @@ export function SpeakerMappingPanel({ speakers, isSaving, onChangeRole }: Speake
                 <span className={cn("size-1.5 rounded-full", color.dot)} />
                 {speaker.label}
               </span>
+              {speaker.role === "unassigned" && speaker.identificationStatus === "matched" && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <ShieldCheck className="size-3.5 text-emerald-600 dark:text-emerald-500" />
+                  Suggested: Doctor — voice match detected (unconfirmed)
+                </span>
+              )}
+              {speaker.role === "unassigned" && speaker.identificationStatus === "unknown" && (
+                <span className="text-xs text-muted-foreground">Needs confirmation</span>
+              )}
               <div className="inline-flex rounded-lg border border-border bg-muted p-1">
                 {ROLE_OPTIONS.map((option) => (
                   <button

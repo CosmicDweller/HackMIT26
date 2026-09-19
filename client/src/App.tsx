@@ -7,6 +7,7 @@ import { DashboardHomePage } from "@/pages/dashboard/DashboardHomePage";
 import { NewTranscriptionPage } from "@/pages/dashboard/NewTranscriptionPage";
 import { TranscriptHistoryPage } from "@/pages/dashboard/TranscriptHistoryPage";
 import { TranscriptViewerPage } from "@/pages/dashboard/TranscriptViewerPage";
+import { VoiceProfilePage } from "@/pages/dashboard/VoiceProfilePage";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ResetPasswordPage } from "@/pages/auth/ResetPasswordPage";
 import { SignupPage } from "@/pages/auth/SignupPage";
@@ -37,6 +38,7 @@ function App() {
           <Route path="/dashboard/history" element={<TranscriptHistoryPage />} />
           <Route path="/dashboard/transcripts/:id" element={<TranscriptViewerPage />} />
           <Route path="/dashboard/account" element={<AccountPage />} />
+          <Route path="/dashboard/voice-profile" element={<VoiceProfilePage />} />
         </Route>
       </Route>
 

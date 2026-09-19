@@ -1,4 +1,5 @@
-import { FilePlus2, Loader2 } from "lucide-react";
+import { FilePlus2, Loader2, Mic, X } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ReviewStatusBadge } from "@/components/dashboard/ReviewStatusBadge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,60 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useActiveJobs } from "@/hooks/useActiveJobs";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranscriptionList } from "@/hooks/useTranscriptionList";
+import { useVoiceProfile } from "@/hooks/useVoiceProfile";
 import { formatDate, formatSeconds } from "@/lib/format";
+
+function voiceOnboardingDismissKey(userId: string) {
+  return `voiceProfileOnboardingDismissed:${userId}`;
+}
+
+function VoiceProfileOnboardingBanner({ userId }: { userId: string }) {
+  const { profile, loading } = useVoiceProfile();
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(voiceOnboardingDismissKey(userId)) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  if (loading || dismissed || profile?.status !== "not_enrolled") return null;
+
+  function handleSkip() {
+    try {
+      localStorage.setItem(voiceOnboardingDismissKey(userId), "1");
+    } catch {
+      // localStorage unavailable (private browsing, etc.) — just dismiss for this render.
+    }
+    setDismissed(true);
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <Mic className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium">Set Up Your Voice Profile</p>
+            <p className="text-xs text-muted-foreground">
+              Record a short sample of your voice to help identify your speech in future
+              consultations.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={handleSkip}>
+            <X className="size-3.5" />
+            Skip for Now
+          </Button>
+          <Button size="sm" render={<Link to="/dashboard/voice-profile" />} nativeButton={false}>
+            Set Up Voice Profile
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function DashboardHomePage() {
   const { user } = useAuth();
@@ -30,6 +84,8 @@ export function DashboardHomePage() {
           New transcription
         </Button>
       </div>
+
+      {user && <VoiceProfileOnboardingBanner userId={user.id} />}
 
       {activeJobs != null && activeJobs.length > 0 && (
         <div>

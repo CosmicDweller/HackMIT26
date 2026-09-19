@@ -10,7 +10,10 @@ const ROLE_LABEL: Record<Speaker["role"], string> = {
 
 export function speakerDisplayLabel(speaker: Speaker | undefined): string {
   if (!speaker) return "Unknown speaker";
-  return speaker.role === "unassigned" ? speaker.label : ROLE_LABEL[speaker.role];
+  if (speaker.role !== "unassigned") return ROLE_LABEL[speaker.role];
+  // A "matched" voice suggestion is never surfaced as an identity here — it's a
+  // suggestion the doctor must confirm via role (see SpeakerMappingPanel), not a label.
+  return speaker.identificationStatus === "unknown" ? `Unknown ${speaker.label}` : speaker.label;
 }
 
 export function formatTranscriptForExport(

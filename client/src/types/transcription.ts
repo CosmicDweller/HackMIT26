@@ -4,6 +4,13 @@ export interface Speaker {
   id: string;
   label: string;
   role: SpeakerRole;
+  /**
+   * Voice-enrollment match against the signed-in doctor's voice profile (proposed,
+   * additive — see docs/API_CONTRACT.md coordination comment on issue #3). Advisory
+   * only: "matched" is a suggestion, never proof of identity, and never sets `role`
+   * automatically. Absent when voice identification wasn't attempted.
+   */
+  identificationStatus?: "matched" | "unknown";
 }
 
 export interface TranscriptSegment {
@@ -58,6 +65,11 @@ export interface Transcription {
   diarizationStatus?: DiarizationStatusV3;
   /** Advisory notices, e.g. a likely spurious extra speaker. Never implies a guarantee either way. */
   warnings?: TranscriptionWarning[];
+  /**
+   * Whether voice-profile matching ran against this recording (proposed, additive).
+   * Absent when the backend doesn't support voice identification yet.
+   */
+  voiceIdentificationStatus?: "completed" | "unavailable" | "failed";
 }
 
 /** Metadata-only shape returned by the list endpoint. */
@@ -91,4 +103,15 @@ export interface TranscriptionJob {
   transcriptionId: string | null;
   error: JobError | null;
   createdAt?: string;
+}
+
+// --- Voice enrollment (proposed, additive): see docs/API_CONTRACT.md coordination comment on issue #3. ---
+
+export type VoiceProfileStatus = "not_enrolled" | "enrolling" | "enrolled" | "needs_reenrollment";
+
+export interface VoiceProfile {
+  status: VoiceProfileStatus;
+  enrolledAt: string | null;
+  sampleCount: number;
+  modelVersion: string | null;
 }

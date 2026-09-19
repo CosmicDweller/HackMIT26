@@ -1,0 +1,113 @@
+import { Mic, RotateCcw, Square, Trash2 } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { formatClock } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+/** Target 10-20s of clean speech per sample — an initial UX setting, not yet validated against
+ * the backend's actual enrollment requirements (see the voice-enrollment coordination proposal). */
+const TARGET_MAX_SECONDS = 20;
+const TARGET_MIN_SECONDS = 10;
+
+interface VoiceSampleRecorderProps {
+  index: number;
+  phrase: string;
+  blob: Blob | null;
+  onRecorded: (blob: Blob) => void;
+  onClear: () => void;
+}
+
+export function VoiceSampleRecorder({ index, phrase, blob, onRecorded, onClear }: VoiceSampleRecorderProps) {
+  const recorder = useAudioRecorder();
+
+  useEffect(() => {
+    if (recorder.status === "recording" && recorder.elapsedSeconds >= TARGET_MAX_SECONDS) {
+      recorder.stop();
+    }
+  }, [recorder]);
+
+  useEffect(() => {
+    if (recorder.recordedAudio) onRecorded(recorder.recordedAudio.blob);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorder.recordedAudio]);
+
+  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+
+  function handleRerecord() {
+    onClear();
+    recorder.reset();
+    recorder.start();
+  }
+
+  const isRecording = recorder.status === "recording";
+  const tooShort = recorder.status === "stopped" && recorder.elapsedSeconds < TARGET_MIN_SECONDS;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">Sample {index}</p>
+        {blob && (
+          <span className="text-xs text-muted-foreground">{formatClock(recorder.elapsedSeconds)}</span>
+        )}
+      </div>
+      <p className="rounded-md bg-muted px-3 py-2 text-sm text-foreground">"{phrase}"</p>
+
+      {!blob ? (
+        <div className="flex flex-col items-center gap-3 py-2">
+          <button
+            type="button"
+            onClick={isRecording ? recorder.stop : recorder.start}
+            disabled={recorder.status === "requesting"}
+            className={cn(
+              "flex size-14 items-center justify-center rounded-full border transition-all",
+              isRecording
+                ? "border-destructive bg-destructive/10 text-destructive"
+                : "border-border bg-card text-foreground hover:border-foreground/30",
+            )}
+            aria-label={isRecording ? "Stop recording" : "Start recording this sample"}
+          >
+            {isRecording ? <Square className="size-5 fill-current" /> : <Mic className="size-6" />}
+          </button>
+          <p className="font-mono text-sm tabular-nums text-muted-foreground">
+            {formatClock(recorder.elapsedSeconds)} / {formatClock(TARGET_MAX_SECONDS)}
+          </p>
+          {recorder.permissionDenied && (
+            <p className="max-w-xs text-center text-xs text-destructive">
+              Microphone access was denied. Allow microphone permission for this site, then try again.
+            </p>
+          )}
+          {recorder.error && <p className="max-w-xs text-center text-xs text-destructive">{recorder.error}</p>}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <audio controls src={url ?? undefined} className="w-full" />
+          {tooShort && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              That was shorter than {TARGET_MIN_SECONDS}s — consider re-recording for a cleaner sample.
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={handleRerecord}>
+              <RotateCcw className="size-3.5" />
+              Re-record
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onClear();
+                recorder.reset();
+              }}
+            >
+              <Trash2 className="size-3.5" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

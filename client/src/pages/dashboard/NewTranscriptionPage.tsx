@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AudioPreview } from "@/components/AudioPreview";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { JobProgress } from "@/components/JobProgress";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UploadPanel } from "@/components/UploadPanel";
 import { useAudioCapture } from "@/hooks/useAudioCapture";
 import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { useVoiceProfile } from "@/hooks/useVoiceProfile";
 import { MAX_JOB_UPLOAD_BYTES } from "@/lib/limits";
 import { USE_MOCK_TRANSCRIPTIONS } from "@/services/transcriptions/transcriptionsService";
 import type { AppState } from "@/types";
@@ -20,6 +21,7 @@ export function NewTranscriptionPage() {
   const { mode, setMode, audio, recorder, handleAudioReady, discardAudio, isRecording } =
     useAudioCapture();
   const { job, uploading, error, start, retry, resume, reset } = useTranscriptionJob();
+  const { profile: voiceProfile, loading: voiceProfileLoading } = useVoiceProfile();
 
   // Reopening an in-progress job from the dashboard, rather than starting a new recording.
   useEffect(() => {
@@ -87,6 +89,23 @@ export function NewTranscriptionPage() {
             (shown on each transcript as "processed locally" or "processed by
             Deepgram"); this app is not HIPAA-compliant.
           </p>
+
+          {!voiceProfileLoading && (
+            <p className="mb-4 text-xs text-muted-foreground">
+              {voiceProfile?.status === "enrolled" ? (
+                "Doctor voice matching is available for this recording."
+              ) : (
+                <>
+                  Automatic doctor voice identification is unavailable until a voice
+                  profile is created.{" "}
+                  <Link to="/dashboard/voice-profile" className="underline underline-offset-2">
+                    Set up now
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          )}
 
           {appState === "error" && (
             <ErrorBanner
