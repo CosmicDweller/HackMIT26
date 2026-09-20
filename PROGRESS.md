@@ -1,6 +1,32 @@
 # Progress
 
-## Current milestone — review checks no longer gate the doctor
+## Current milestone — deployed for judging
+**Live: https://hackmit-scribe.vercel.app** (client on Vercel, backend
+tunnelled from this laptop).
+
+- Client: Vercel project `hackmit-scribe`, built with
+  `VITE_API_BASE_URL=<tunnel>` baked in. Not SSO-protected — verified 200
+  with no redirect, and deep links resolve via the SPA rewrite.
+- Backend: unchanged on this machine, exposed by a Cloudflare quick tunnel
+  (no account needed). **Only alive while this laptop is awake and online,
+  and the tunnel URL changes if it restarts** — a restart means rebuilding
+  and redeploying the client with the new origin.
+
+Two production-only bugs found while wiring it up, neither reachable in dev:
+- `X-Confirm` was missing from `Access-Control-Allow-Headers`, so deleting a
+  voice profile would have failed cross-origin only (behind the dev proxy
+  the request is same-origin and never preflighted).
+- `CORS_ORIGIN` took a single origin, forcing a choice between the deployed
+  client and localhost. It now takes a comma-separated list.
+
+Verified from the deployed page itself: `/api/health` → ok, and
+`/api/transcriptions` → `401 UNAUTHENTICATED` (reached the server, no CORS
+failure). Signing in needs your own doctor account.
+
+Housekeeping: a stray Vercel project named `dist` exists from the first
+deploy attempt and IS SSO-protected. Unused — safe to delete.
+
+## Previous milestone — review checks no longer gate the doctor
 **Product decision (user's call): the validator informs, it never refuses.**
 Saving and approving now always succeed; every check still runs and every
 finding is still shown and stored, but none of them withholds a signature.

@@ -1,14 +1,23 @@
 import { AppError } from "../lib/errors.js";
 
-/** Allow the configured frontend origin (default: the Vite dev server). */
+/**
+ * Allow the configured frontend origin(s) (default: the Vite dev server).
+ *
+ * CORS_ORIGIN takes a comma-separated list, because a deployed client and the local dev server are both legitimate callers of the
+ * same backend and a single value forced a choice between them. Each entry is matched exactly; "*" allows any origin.
+ */
 export function cors(allowedOrigin) {
+  const allowed = new Set(String(allowedOrigin ?? "").split(",").map((entry) => entry.trim()).filter(Boolean));
   return (req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && (allowedOrigin === "*" || origin === allowedOrigin)) {
+    if (origin && (allowed.has("*") || allowed.has(origin))) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      // X-Confirm carries the explicit confirmation for destructive calls (deleting a voice profile). It only reaches here on a
+      // cross-origin deployment — behind the dev proxy the request is same-origin and never preflighted — so omitting it made
+      // profile deletion fail in production only.
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm");
     }
     if (req.method === "OPTIONS") return res.sendStatus(204);
     next();
