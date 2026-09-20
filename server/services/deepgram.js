@@ -17,7 +17,7 @@ import https from "node:https";
 import { pipeline } from "node:stream";
 import { requestCancelled } from "../lib/errors.js";
 
-// Upper bound for a provider response held in memory (a two-hour transcript is tens of MB).
+// Upper bound for a provider response held in memory (a 30-minute transcript is a few MB).
 const MAX_RESPONSE_BYTES = 512 * 1024 * 1024;
 
 /**

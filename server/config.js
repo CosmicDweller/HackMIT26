@@ -31,9 +31,9 @@ export function loadConfig(env = process.env) {
     deepgramTimeoutMs: intFromEnv(env, "DEEPGRAM_TIMEOUT_MS", 9 * 60_000),
     // Recordings longer than this need a callback (async) request; without one they are rejected up
     // front (before any audio is sent) rather than risking a 10-minute timeout that loses the result.
-    // Default = the recording maximum: a real 2-hour recording was processed in 29 s (10 s at Deepgram).
+    // Default = the recording maximum (30 minutes), so no default recording ever needs a callback.
     // Lower it on a slow uplink: the whole upload must finish inside DEEPGRAM_TIMEOUT_MS.
-    deepgramSyncMaxSeconds: intFromEnv(env, "DEEPGRAM_SYNC_MAX_SECONDS", 7200),
+    deepgramSyncMaxSeconds: intFromEnv(env, "DEEPGRAM_SYNC_MAX_SECONDS", 1800),
     // Public URL that Deepgram can POST results to (for long recordings). Empty = callbacks disabled.
     deepgramCallbackBaseUrl: env.DEEPGRAM_CALLBACK_BASE_URL ?? "",
     callbackPort: intFromEnv(env, "CALLBACK_PORT", 8443),
@@ -41,9 +41,10 @@ export function loadConfig(env = process.env) {
     // Segments below these confidences are flagged needsReview (advisory only).
     reviewWordConfidence: Number.parseFloat(env.REVIEW_WORD_CONFIDENCE ?? "") || 0.85,
     reviewSpeakerConfidence: Number.parseFloat(env.REVIEW_SPEAKER_CONFIDENCE ?? "") || 0.6,
-    // Recordings (jobs): original uploads are file-backed under uploadDir.
-    maxRecordingSeconds: intFromEnv(env, "MAX_RECORDING_SECONDS", 7200),
-    maxRecordingBytes: intFromEnv(env, "MAX_RECORDING_BYTES", 1024 * 1024 * 1024),
+    // Recordings (jobs): original uploads are file-backed under uploadDir. One recording is at most 30 minutes; a longer consultation is
+    // several recordings. (512 MiB is generous for 30 minutes even of uncompressed 48 kHz stereo audio, about 345 MB.)
+    maxRecordingSeconds: intFromEnv(env, "MAX_RECORDING_SECONDS", 1800),
+    maxRecordingBytes: intFromEnv(env, "MAX_RECORDING_BYTES", 512 * 1024 * 1024),
     ffprobeBin: env.FFPROBE_BIN ?? "ffprobe",
     uploadDir: path.resolve(serverDir, env.UPLOAD_DIR ?? "data/uploads"),
     // Failed jobs keep their audio this long so they can be retried; completed jobs delete it at once.
@@ -86,7 +87,7 @@ export function loadConfig(env = process.env) {
     voiceProfileKey: env.VOICE_PROFILE_KEY ?? "",
     voiceTimeoutMs: intFromEnv(env, "VOICE_TIMEOUT_MS", 10 * 60_000),
     // The independent speaker check runs the segmentation model over the whole recording. Measured: about 2 minutes for 20 minutes of
-    // audio, and much worse than linear (over 10 minutes for two hours). Longer recordings skip it (with a warning); doctor
+    // audio, and much worse than linear. Recordings over this skip it (with a warning); the default equals the 30-minute recording maximum; doctor
     // identification, which embeds a bounded number of regions, still runs.
     voiceIndependentMaxSeconds: intFromEnv(env, "VOICE_INDEPENDENT_MAX_SECONDS", 30 * 60),
     // Speaker diarization with pyannote Community-1 (local Python worker, isolated venv). Separate PYANNOTE_* names because DIARIZATION_*
@@ -100,7 +101,7 @@ export function loadConfig(env = process.env) {
     // A run gets max(PYANNOTE_TIMEOUT_MIN_MS, audio length x PYANNOTE_TIMEOUT_FACTOR), never more than PYANNOTE_TIMEOUT_MAX_MS.
     pyannoteTimeoutMinMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MIN_MS", 120_000),
     pyannoteTimeoutFactor: Number.parseFloat(env.PYANNOTE_TIMEOUT_FACTOR ?? "") || 1,
-    pyannoteTimeoutMaxMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MAX_MS", 4 * 60 * 60_000),
+    pyannoteTimeoutMaxMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MAX_MS", 60 * 60_000),
     // "always": speakers come from pyannote whenever it runs. "when-merged": only when Deepgram found at most one speaker.
     pyannotePolicy: env.PYANNOTE_POLICY === "when-merged" ? "when-merged" : "always",
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),

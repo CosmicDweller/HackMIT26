@@ -26,7 +26,7 @@ import { analyzeSpeakers } from "./voice/analysis.js";
 /** Safe, user-facing text for every job error code. No provider details, paths or credentials. */
 export const JOB_ERRORS = {
   INVALID_AUDIO: "The recording could not be read as audio.",
-  RECORDING_TOO_LONG: "The recording is longer than the maximum allowed length.",
+  RECORDING_TOO_LONG: "The recording is longer than 30 minutes. Please record in parts of up to 30 minutes.",
   NO_SPEECH: "No speech was detected in the recording.",
   PROVIDER_NOT_CONFIGURED: "Speech transcription is not configured on the server.",
   PROVIDER_AUTH_FAILED: "The speech service rejected the server's credentials.",

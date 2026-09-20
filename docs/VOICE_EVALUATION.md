@@ -105,19 +105,20 @@ Deepgram finding more speakers than the analysis, a segmentation failure, and a 
 
 ## Long recordings
 
+**Since 2026-09-20 one recording is at most 30 minutes** (product decision; the earlier 2-hour maximum was removed, see Contract v5). The measurements below were made
+with a two-hour test file, which is no longer an accepted length, and are kept because they explain the current settings.
+
 Measured with `node scripts/probe-voice-long.mjs --minutes 120` (150 repetitions of a two-person conversation, 230 MB WAV, 7,200 s; analysis only, no Deepgram call):
 
 | Case | Time | Peak memory of the voice model | Result |
 | --- | --- | --- | --- |
 | Deepgram separated the speakers | 5 s | 621 MB (Node process stayed near 110 MB) | doctor matched, patient unknown, all 13,200 words kept, no timestamp going backwards, last word at 7,197 s |
-| Deepgram merged them | 3 s | 550 MB | independent check **skipped with a warning**, see below |
+| Deepgram merged them | 3 s | 550 MB | independent check skipped with a warning (because it was over the then 30-minute check limit) |
 
-**Found by this measurement and fixed:** the independent check runs the segmentation model over the whole recording; a first two-hour run silently hit the default 60 s timeout and
-did nothing. Measured cost: about 2 minutes for 20 minutes of audio, and over 10 minutes for two hours (worse than linear). Now, recordings over `VOICE_INDEPENDENT_MAX_SECONDS`
-(default 1,800) skip the independent check and add the warning `INDEPENDENT_SPEAKER_CHECK_SKIPPED`; shorter ones get a timeout in proportion to their length;
-a failure adds `VOICE_ANALYSIS_FAILED`. Doctor identification embeds at most 120 evenly spread regions per speaker, so it stays fast at any length.
-For a two-hour recording where Deepgram merged voices, therefore, the merge is neither detected nor repaired; the warning tells the doctor to assign speakers by hand.
-(In the merged two-hour probe the merged speaker was `unknown`: it was a mix of both voices, so its status describes the mix, not either person.)
+**Found by this measurement and fixed:** the independent (sherpa) check runs the segmentation model over the whole recording; a first two-hour run silently hit the default 60 s timeout and
+did nothing. Measured cost: about 2 minutes for 20 minutes of audio, and over 10 minutes for two hours (worse than linear). It now gets a timeout in proportion to the recording's length,
+adds `INDEPENDENT_SPEAKER_CHECK_SKIPPED` above `VOICE_INDEPENDENT_MAX_SECONDS`, and `VOICE_ANALYSIS_FAILED` when it cannot run. Because that limit (default 1,800 s) now equals the 30-minute
+recording maximum, with the defaults the check runs on every recording that is accepted. Doctor identification embeds at most 120 evenly spread regions per speaker, so it stays fast at any length.
 
 ## Known limitations (all measured)
 
@@ -128,7 +129,6 @@ For a two-hour recording where Deepgram merged voices, therefore, the merge is n
 - **Hoarse or variable voices** may be rejected at enrollment (one held-out synthetic voice was) or score low.
 - **Real speakers, real microphones and clinical noise were not measured.** Neither were accents, illness, multiple rooms or crosstalk.
 - **Three-speaker counting** is the weakest case (91.6% at the calibration plateau; lower at the more conservative threshold actually used, about 74% in an earlier measurement).
-- **Recordings over 30 minutes** skip the independent check (above).
 - **Existing transcripts cannot be reprocessed**: the recording is deleted when a job completes, so a "reprocess speakers" endpoint is not implemented. A design that would allow it (opt-in, encrypted, time-limited audio retention) is a privacy decision for the product owner.
 - **Live Deepgram + voice model** tests exist (`tests/real-voice.test.js`, opt-in with `DEEPGRAM_LIVE_TEST=1`) but were **not run**: they upload synthetic audio to a paid service and are held for approval.
 

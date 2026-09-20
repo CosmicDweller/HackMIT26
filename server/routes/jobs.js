@@ -6,7 +6,7 @@ import { createUploadMiddleware } from "../middleware/upload.js";
 const ID_PATTERN = /^job_[0-9a-f-]{36}$/;
 
 /**
- * Asynchronous transcription jobs for recordings of any supported length (up to two hours).
+ * Asynchronous transcription jobs for recordings up to the configured maximum (30 minutes by default).
  * Every route requires a verified session and is scoped to that doctor.
  */
 export function createJobsRouter(config, jobs, store, authenticate) {

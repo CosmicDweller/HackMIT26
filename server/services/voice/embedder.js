@@ -5,7 +5,7 @@ import { fileExists, run } from "../../lib/exec.js";
 
 // The local speaker-embedding model (SpeechBrain ECAPA-TDNN) runs in an isolated Python process (voice/embed.py). Requests and
 // responses are JSON on stdin/stdout: profiles and embeddings never appear on a command line, in a file or in a log.
-// One process at a time (each loads a ~1 GB model), so a two-hour recording cannot fan out into many concurrent models.
+// One process at a time (each loads a ~1 GB model), so a long recording cannot fan out into many concurrent models.
 
 export const MODEL_NAME = "speechbrain/spkrec-ecapa-voxceleb";
 const PACKAGE_VERSION = "speechbrain==1.0.3";

@@ -1,7 +1,7 @@
-// Analysis-only timing and memory check for a LONG recording (default two hours), with no Deepgram call and no cost:
+// Analysis-only timing and memory check for a LONG recording (default 30 minutes, the recording maximum), with no Deepgram call and no cost:
 // the fixture conversation is repeated to the requested length, its known words are used in place of a transcript, and the real
 // pipeline (real segmentation model, real ECAPA embeddings, real clustering, doctor verification) runs on the real audio.
-// Usage: node scripts/probe-voice-long.mjs [--minutes 120] [--fixture dpdp] [--doctor ralph] [--deepgram-correct]
+// Usage: node scripts/probe-voice-long.mjs [--minutes 30] [--fixture dpdp] [--doctor ralph] [--deepgram-correct]
 // (--deepgram-correct: the stand-in transcript carries the true speakers, as when Deepgram separates them; otherwise all words are one speaker, as when it merges them)
 import { spawnSync } from "node:child_process";
 import { readFileSync, mkdtempSync, statSync } from "node:fs";
@@ -11,7 +11,7 @@ import { analyzeSpeakers } from "../services/voice/analysis.js";
 import { normalizedFromWords, realEnvironment, wordsFromTruth } from "./probe-voice-scenarios.mjs";
 
 const arg = (name, fallback) => (process.argv.includes(`--${name}`) ? process.argv[process.argv.indexOf(`--${name}`) + 1] : fallback);
-const minutes = Number(arg("minutes", 120));
+const minutes = Number(arg("minutes", 30));
 const fixture = arg("fixture", "dpdp");
 const doctor = arg("doctor", "ralph");
 const correct = process.argv.includes("--deepgram-correct");

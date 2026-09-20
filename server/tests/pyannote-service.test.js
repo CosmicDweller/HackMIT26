@@ -187,7 +187,7 @@ describe("running the worker", () => {
     const f = await fixture({ body: "exit 0", overrides: { pyannoteTimeoutMinMs: 60_000, pyannoteTimeoutFactor: 0.5, pyannoteTimeoutMaxMs: 1_000_000 } });
     assert.equal(f.service.timeoutFor(10), 60_000);
     assert.equal(f.service.timeoutFor(1200), 600_000);
-    assert.equal(f.service.timeoutFor(7200), 1_000_000);
+    assert.equal(f.service.timeoutFor(3600), 1_000_000);
     assert.equal(f.service.timeoutFor(null), 60_000);
   });
 

@@ -12,7 +12,7 @@ import { fileExists, run } from "../lib/exec.js";
 export const PROVIDER = "pyannote-community-1";
 export const MODEL = "pyannote/speaker-diarization-community-1";
 const CACHE_DIR = "models--pyannote--speaker-diarization-community-1";
-const MAX_INTERVALS = 200_000; // sanity bound on a worker's answer (two hours is a few thousand)
+const MAX_INTERVALS = 200_000; // sanity bound on a worker's answer (a 30-minute recording is a few hundred)
 const DURATION_TOLERANCE_MS = 1500;
 
 export class PyannoteError extends Error {

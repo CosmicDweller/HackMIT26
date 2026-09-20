@@ -63,12 +63,12 @@ then flip `VITE_USE_MOCK_API=false` and verify against the real backend.
 ## Backend status (lz)
 - v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
 - v3 (branch `lz`): **Deepgram Nova-3 Medical + the latest batch diarizer is the primary engine**, with a persistent job system
-  (`/api/transcription-jobs*`), file-backed recordings up to 2 hours, `needsReview` flags, `diarizationStatus`, and a secured (off by
+  (`/api/transcription-jobs*`), file-backed recordings up to **30 minutes each** (limit lowered from 2 hours on 2026-09-20; the frontend's recorder still says 2 h: see Contract v5), `needsReview` flags, `diarizationStatus`, and a secured (off by
   default) callback listener for long recordings. whisper.cpp remains an optional fallback (`STT_ENGINE=local`).
 - Verified live with synthetic audio: exact request, model `medical-nova-3`, diarizer v2, A-B-A / 3-speaker / 5-minute recordings
-  through the full stack, including **30-minute and 2-hour recordings** (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
+  through the full stack, including 30-minute and (before the limit was lowered) 2-hour recordings (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
   misattributes a sentence, and the 2-hour recording produced a spurious 3rd speaker (0.08% of speech; now flagged with a warning, not reassigned).
-  Synchronous limit default raised to 2 h. **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
+  Synchronous limit default is now 30 min (equal to the recording maximum). **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
 - v4 (branch `lz`, not yet merged): **doctor voice enrollment and identification** (`/api/me/voice-profile`), local SpeechBrain ECAPA-TDNN, independent speaker check when Deepgram finds <=1 speaker, `identificationStatus` / `suggestedRole` on speakers (suggestion only; `role` stays the doctor's). Encrypted profiles, explicit consent. Measured on SYNTHETIC voices only: 0/162 false doctor matches with the doctor absent; recovers 3 of 11 Deepgram merges at the conservative setting; thresholds must be re-measured with real consenting speakers. See docs/VOICE_EVALUATION.md and Contract v4. Setup: `npm run setup:voice`, set `VOICE_PROFILE_KEY`.
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
 - Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

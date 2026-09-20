@@ -64,9 +64,9 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   public `/api/transcribe` always uses it. Whisper text is never mixed with Deepgram speakers. Synthetic data only until a BAA
   and the other approvals in the contract exist.
 - **Recordings and jobs.** Every authenticated recording is a persistent job (`POST /api/transcription-jobs`, poll
-  `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 2 hours / 1 GiB,
+  `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 30 minutes / 512 MiB per recording (a longer consultation is several recordings),
   written to disk (never held in memory), verified by decoding the whole file, sent to Deepgram as FLAC streamed from disk.
-  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (default 2 h; a real 2-hour recording finished in 29 s) need a callback URL, which is off by default and needs a public
+  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (default 30 min, the recording maximum, so none by default) need a callback URL, which is off by default and needs a public
   endpoint (it cannot reach localhost); without it they are rejected before any audio is sent. Timeouts and restarts never
   trigger an automatic resubmission (you would be billed twice). See the contract for statuses, errors and retention.
 - **Evaluating it.** `npm run eval:deepgram` scores the live engine on the synthetic recordings (WER, diarization error rate,
@@ -106,8 +106,8 @@ when Deepgram finds at most one speaker, and (C) verification of the enrolled do
 - **Not installed?** Everything still works: identification is `unavailable`, the transcript and Deepgram's speakers are unchanged.
 - **Real-inference tests** (`tests/real-voice.test.js`) run the real model and are skipped when it is not installed. Its live section
   (Deepgram + the real model) needs `DEEPGRAM_LIVE_TEST=1` and uploads a few synthetic recordings.
-- **Probes:** `node scripts/probe-voice-scenarios.mjs` (all fixture scenarios) and `node scripts/probe-voice-long.mjs --minutes 120`
-  (timing and memory of the analysis on a two-hour recording; no Deepgram call).
+- **Probes:** `node scripts/probe-voice-scenarios.mjs` (all fixture scenarios) and `node scripts/probe-voice-long.mjs --minutes 30`
+  (timing and memory of the analysis on a long recording, default 30 minutes; no Deepgram call).
 
 ## Preflight check and warm-up
 
@@ -196,7 +196,7 @@ npm test
 - `tests/normalize.test.js`: turning real Deepgram responses (saved in `tests/fixtures/deepgram/`) into segments.
 - `tests/deepgram.test.js`: the Deepgram client against a stub (exact parameters, streaming, error classification, no key leakage).
 - `tests/jobs.test.js`: the job system against a stub that replays real responses (lifecycle, retries, duplicate-charge safety,
-  restart recovery, retention, callbacks, ownership, a real 7200 s boundary).
+  restart recovery, retention, callbacks, ownership, a real 1800 s boundary and the removed two-hour limit).
 - `tests/voice-math.test.js`, `voice-profile.test.js`, `voice-analysis.test.js`, `voice-jobs.test.js`: the voice feature with scripted stand-in embeddings (clustering parity with SciPy, consent/quality/encryption/ownership, decision policy, alignment, job integration).
 - `tests/real-voice.test.js`: the REAL voice model and enrollment on synthetic voices (skipped if not installed); live Deepgram section opt-in.
 - `tests/real-deepgram.test.js`: LIVE Deepgram through the full stack; skipped unless `DEEPGRAM_LIVE_TEST=1` and a key are set.

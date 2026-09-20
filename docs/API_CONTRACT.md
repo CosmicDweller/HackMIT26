@@ -418,7 +418,7 @@ On failure `error` is `{ "code": "PROVIDER_TIMEOUT", "message": "..." }` (messag
 
 ### POST /api/transcription-jobs
 
-`multipart/form-data`, field `audio`. Up to **7200 s (2 hours)** and **1 GiB** (`413 FILE_TOO_LARGE` above the size limit; the upload
+`multipart/form-data`, field `audio`. Up to **1800 s (30 minutes) per recording** and **512 MiB** (`413 FILE_TOO_LARGE` above the size limit; a longer consultation is several recordings. **Changed 2026-09-20: this was 7200 s / 1 GiB, see "Recording length limit" under Contract v5**; the upload
 is written straight to disk, never held in memory). Returns `202` with the job view and `Location`. Duration is
 measured from the decoded audio, not from headers (browser recordings often have none). Requires authentication.
 
@@ -441,7 +441,7 @@ transcriptions, corrections and reviews are untouched, and reconciling two versi
 
 Creates a job and waits up to 3 minutes: `201` with the transcription when done, the usual `{ error, code }` (plus
 `jobId`) on failure, or `202` with the job view if it is still running. Its 10 MB upload limit is unchanged; its former
-60 s limit is relaxed to the 2-hour maximum (only a widening). A client that disconnects does not lose the transcript:
+60 s limit is relaxed to the 30-minute maximum. A client that disconnects does not lose the transcript:
 the job finishes and appears in history.
 
 ## Job error codes
@@ -449,7 +449,7 @@ the job finishes and appears in history.
 | `error.code` | Meaning | Recording kept for retry? |
 | --- | --- | --- |
 | `INVALID_AUDIO` | Not decodable audio. | No (deleted) |
-| `RECORDING_TOO_LONG` | Decoded length above 7200 s. | No |
+| `RECORDING_TOO_LONG` | Decoded length above 1800 s (30 minutes). The message tells the doctor to record in parts of up to 30 minutes. | No |
 | `NO_SPEECH` | Nothing was recognized. | No |
 | `PROVIDER_BAD_AUDIO` | Deepgram could not process the audio. | No |
 | `PROVIDER_NOT_CONFIGURED` | No API key on the server. | Yes |
@@ -471,7 +471,7 @@ most `MAX_SUBMIT_ATTEMPTS` times. After a restart a possibly-sent recording is f
 
 Deepgram's synchronous requests return `504` after 10 minutes and it does not store transcripts, so a timed-out request is
 paid for and lost. Therefore:
-- Recordings up to `DEEPGRAM_SYNC_MAX_SECONDS` (default 7200 s, the maximum recording length) are sent synchronously. A real two-hour recording was processed in 29 s end to end (about 10 s at Deepgram), far inside the 10-minute limit. On a slow uplink lower it: the whole upload must finish inside `DEEPGRAM_TIMEOUT_MS`.
+- Recordings up to `DEEPGRAM_SYNC_MAX_SECONDS` (default 1800 s, the maximum recording length) are sent synchronously, so with the defaults no recording needs a callback. (Measured earlier: a real 30-minute recording took 8 s end to end and a two-hour one 29 s, far inside Deepgram's 10-minute limit; the two-hour length is no longer accepted.) On a slow uplink lower it: the whole upload must finish inside `DEEPGRAM_TIMEOUT_MS`.
 - Longer ones need an **asynchronous callback**. A callback cannot reach `localhost`: it requires a publicly reachable URL
   (`DEEPGRAM_CALLBACK_BASE_URL`) that forwards to a separate tiny listener (`127.0.0.1:CALLBACK_PORT`) serving **only**
   `POST /deepgram-callback/:jobId`. Exposing that port is a deliberate, separately approved step; nothing else of the server is exposed.
@@ -480,8 +480,8 @@ paid for and lost. Therefore:
   Deepgram's `dg-token` header is documented as not guaranteed and is not relied on. Only ports 80, 443, 8080 and 8443 are
   allowed by Deepgram; it retries a failed callback up to 10 times, 30 s apart.
 - Without a callback URL, over-limit recordings fail immediately with `LONG_RECORDING_NEEDS_CALLBACK` (no audio sent).
-- The recording is verified (FFmpeg decodes all of it), normalized to mono 16 kHz FLAC on disk (about 17 KB/s of speech, so ~120 MB
-  for two hours), and streamed to Deepgram with backpressure. Timestamps are Deepgram's for the whole file: nothing is chunked, so
+- The recording is verified (FFmpeg decodes all of it), normalized to mono 16 kHz FLAC on disk (about 17 KB/s of speech, so ~30 MB
+  for 30 minutes), and streamed to Deepgram with backpressure. Timestamps are Deepgram's for the whole file: nothing is chunked, so
   nothing resets and speaker ids are never stitched across separate requests.
 
 ## Model fallback
@@ -505,7 +505,7 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 | Overlapping speech (14 s) | 2/2 | 2.5% | 1.3% | 84.6% |
 | Medical, 5 minutes (289 s) | 2/2 | 0.9% | 0.6% | 100% |
 | Medical, 30 minutes (1799 s, 392 turns) | 2/2 | 0.7% | 0.6% | 99.8% |
-| Medical, 2 hours (7197 s, 1568 turns) | **2/3** (see below) | 0.73% | 0.63% | 99.4% |
+| Medical, 2 hours (7197 s, 1568 turns; **historical: no longer an accepted length**) | **2/3** (see below) | 0.73% | 0.63% | 99.4% |
 | Silence / pink noise | no words, reported as no speech | | | |
 
 **Failures and limits, honestly:**
@@ -523,13 +523,13 @@ DER uses a 250 ms collar. Every response reported model `medical-nova-3` and dia
 ## Verified vs not yet verified
 
 Verified with real Deepgram and synthetic audio: the exact request; the real response shape, `diarize_info`, model reporting;
-30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise, 5-minute, **30-minute and 2-hour** recordings through the full stack; job
+30 s, A-B-A, three-speaker, single-speaker, overlap, silence, noise, 5-minute, **30-minute and (historically) 2-hour** recordings through the full stack; job
 statuses; persistence and reopening. The **2-hour** recording (7197 s, 1568 turns, 219 MB WAV) went through the real server in 29 s end to end
 (verify 2 s, upload 16 s, Deepgram 10 s), completed on the first attempt with model `medical-nova-3` and diarizer v2, WER 0.73%, DER 0.63%, all 224
 repetitions present once, timestamps 0.2 s to 7195 s with none going backwards, the recording deleted afterwards, and the server process grew by 110 MB
 (77 to 187 MB), measured in a separate process. Its one flaw is the spurious third speaker described above. The 30-minute recording took 8.1 s (server +54 MB).
 Verified with a stub (real captured responses): failure handling, retries, restart recovery, retention, callbacks and their authentication.
-Verified with real FFmpeg and a stub: a real 7200 s recording is accepted and a 7205 s one is rejected.
+Verified with real FFmpeg and a stub: a real 1800 s recording is accepted, 1805 s is rejected, and a 7200 s recording is now rejected (`RECORDING_TOO_LONG`).
 **Not verified:** callbacks against the real service (needs a public URL, not needed at these speeds); recordings with real people, real microphones or
 clinical noise; whether an unusually slow uplink keeps a two-hour upload inside `DEEPGRAM_TIMEOUT_MS`. Real patient audio must not be used.
 
@@ -624,7 +624,7 @@ Scores and similarity numbers are internal and are never returned (a cosine simi
 2. Below the reject line with enough evidence is `unknown`. Not the doctor never means patient.
 3. Too little speech is `uncertain`, not `matched` and not `unknown`.
 4. Independent diarization runs only when Deepgram found at most one speaker (over-splitting would fabricate speakers, under-splitting merely keeps today's behaviour). It needs one region of at least 2.5 s per voice, so a cough cannot become a speaker.
-5. No transcript word, timestamp or punctuation is changed, dropped or duplicated by the analysis; only the speaker label of a word can differ. Timestamps stay recording-wide (a two-hour recording is analysed in bounded regions; the model process never loads a whole file).
+5. No transcript word, timestamp or punctuation is changed, dropped or duplicated by the analysis; only the speaker label of a word can differ. Timestamps stay recording-wide (a long recording is analysed in bounded regions; the voice-model process never loads a whole file).
 6. Any failure of the voice model degrades to the previous behaviour with a warning; the transcript is never lost.
 7. The doctor's `role` always wins: the model only suggests.
 
@@ -633,7 +633,7 @@ Scores and similarity numbers are internal and are never returned (a cosine simi
 - Two voices that are almost identical (same underlying voice) cannot be separated by any model; they stay one speaker and, if it is the doctor's voice, both are `matched`. Rare among real people but possible (relatives, or the same person on two lines).
 - A very short reply (a couple of seconds) inside a long monologue may be separated, but is only `uncertain` (too little evidence), never `matched`.
 - Short recordings often end up `uncertain`.
-- The independent check (only used when Deepgram finds at most one speaker) costs about 2 minutes per 20 minutes of audio and much more beyond that, so it is skipped above `VOICE_INDEPENDENT_MAX_SECONDS` (default 1800). Doctor identification still runs at any length (measured on a 2-hour recording: 5 s, 621 MB peak in the model process).
+- The independent check (only used when Deepgram finds at most one speaker) costs about 2 minutes per 20 minutes of audio. Its length limit `VOICE_INDEPENDENT_MAX_SECONDS` (default 1800) now equals the 30-minute recording maximum, so with the defaults it is never skipped. Doctor identification runs at any length.
 - Hoarse or very variable voices can be rejected at enrollment or score lower than the thresholds expect.
 - The voice thresholds were calibrated on text-to-speech voices. Text-to-speech is far more consistent than people, so real-world error rates are unknown and must be measured with consenting real speakers before anyone relies on the numbers.
 - Speakers with unusually similar recording conditions (or a different microphone from the enrollment) are handled by multi-condition enrollment, but this is measured only with simulated channel changes.
@@ -652,3 +652,25 @@ Raw enrollment audio is removed before the enrollment response is sent. The appl
 3. Show `warnings` with code `SPEAKERS_FROM_VOICE_ANALYSIS` as a neutral notice ("speakers were separated by voice analysis; please review").
 4. A "Delete my voice profile" action in settings that sends `X-Confirm: delete-voice-profile`.
 5. Everything else (jobs, polling, segment editing) is unchanged.
+
+
+---
+
+# Contract v5: recording length limit lowered to 30 minutes
+
+**Changed 2026-09-20 (product decision): one recording is at most 30 minutes (1800 s).** The 2-hour limit no longer exists.
+
+| | Before | Now |
+| --- | --- | --- |
+| Longest recording (`MAX_RECORDING_SECONDS`) | 7200 s | **1800 s** |
+| Largest upload (`MAX_RECORDING_BYTES`) | 1 GiB | **512 MiB** |
+| Synchronous Deepgram limit (`DEEPGRAM_SYNC_MAX_SECONDS`) | 7200 s | **1800 s** (equal to the maximum: no callback is needed by default) |
+| `RECORDING_TOO_LONG` message | "longer than the maximum allowed length" | "The recording is longer than 30 minutes. Please record in parts of up to 30 minutes." |
+
+- This **narrows** what v3 accepted. Every request that worked before and is 30 minutes or shorter still works unchanged; longer ones now fail
+  with `400 INVALID_AUDIO` (synchronous route) or a failed job with `error.code = RECORDING_TOO_LONG` (jobs), before any audio is sent to Deepgram.
+- The check uses the decoded duration, so a client cannot get past it by omitting or faking a header. The rejected upload is deleted.
+- **Frontend action needed (not changed by the backend agent, `client/` is not ours):** `client/src/hooks/useAudioRecorder.ts` sets
+  `MAX_RECORDING_SECONDS = 7200`; it should become `1800`, and the recorder should stop or offer "start a new recording" at 30:00 so a longer
+  consultation is captured as consecutive recordings. Until then a doctor can record past 30 minutes and only find out on upload.
+- An operator can still change the limits through the environment variables above; the defaults are what this contract describes.
