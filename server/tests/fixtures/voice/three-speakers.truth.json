@@ -1,0 +1,61 @@
+{
+ "durationMs": 43586,
+ "turns": [
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Good afternoon, please have a seat and tell me what brings you in today.",
+   "startMs": 950,
+   "endMs": 5346
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I have been very tired for about two weeks and I get dizzy when I stand up quickly.",
+   "startMs": 5996,
+   "endMs": 11361
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "I have taken your weight and temperature, and the results are on the chart.",
+   "startMs": 12011,
+   "endMs": 16298
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "How long have you been feeling this way, and does anything make it better?",
+   "startMs": 16948,
+   "endMs": 21413
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "It comes and goes, mostly in the afternoon, and resting seems to help a little.",
+   "startMs": 22063,
+   "endMs": 27661
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "Shall I bring in the paperwork for the blood test before you leave today?",
+   "startMs": 28311,
+   "endMs": 32630
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "I would like to check your blood pressure and listen to your heart now.",
+   "startMs": 33280,
+   "endMs": 37298
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I take one tablet for my blood pressure every morning and a vitamin most days.",
+   "startMs": 37948,
+   "endMs": 43186
+  }
+ ]
+}

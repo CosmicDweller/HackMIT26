@@ -96,9 +96,11 @@ describe("job lifecycle with real Deepgram responses", () => {
     assert.equal(t.engine, "deepgram");
     assert.equal(t.diarizationStatus, "completed");
     assert.deepEqual(t.speakers, [
-      { id: "speaker_0", label: "Speaker 1", role: "unassigned" },
-      { id: "speaker_1", label: "Speaker 2", role: "unassigned" },
+      { id: "speaker_0", label: "Speaker 1", role: "unassigned", identificationStatus: "unavailable", suggestedRole: null },
+      { id: "speaker_1", label: "Speaker 2", role: "unassigned", identificationStatus: "unavailable", suggestedRole: null },
     ]);
+    assert.equal(t.voiceIdentificationStatus, "not_enrolled");
+    assert.equal(t.speakerSource, "deepgram");
     assert.deepEqual(t.segments.map((s) => [s.speakerId, s.text]), [
       ["speaker_0", "Are you eating regularly?"],
       ["speaker_1", "I eat two meals per day."],

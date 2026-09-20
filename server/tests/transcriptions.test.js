@@ -167,8 +167,8 @@ describe("creating and reading transcriptions", () => {
     assert.equal(t.reviewStatus, "needs_review");
     assert.deepEqual(t.diarization, { status: "ok", speakerCount: 2 });
     assert.deepEqual(t.speakers, [
-      { id: "speaker_1", label: "Speaker 1", role: "unassigned" },
-      { id: "speaker_2", label: "Speaker 2", role: "unassigned" },
+      { id: "speaker_1", label: "Speaker 1", role: "unassigned", identificationStatus: "unavailable", suggestedRole: null },
+      { id: "speaker_2", label: "Speaker 2", role: "unassigned", identificationStatus: "unavailable", suggestedRole: null },
     ]);
     assert.deepEqual(t.segments, [
       { id: "segment_1", startMs: 250, endMs: 1500, text: "Hello", speakerId: "speaker_1", needsReview: false },

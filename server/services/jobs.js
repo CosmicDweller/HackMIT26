@@ -1,11 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import path from "node:path";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { AppError, notFound } from "../lib/errors.js";
 import { alignSegments } from "./align.js";
 import { DeepgramError, deepgramConfigured, minorSpeakers, normalizeDeepgramResponse, requestDeepgram } from "./deepgram.js";
-import { makeWorkDir, prepareRecording, RecordingError } from "./recording.js";
+import { makeWorkDir, prepareRecording, RecordingError, toWav } from "./recording.js";
+import { analyzeSpeakers } from "./voice/analysis.js";
 
 // ---------------------------------------------------------------------------------------------
 // Persistent transcription jobs.
@@ -59,7 +61,7 @@ const TERMINAL = new Set(["completed", "failed"]);
 const sha256 = (value) => createHash("sha256").update(value).digest();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createJobManager({ config, store, pipeline, logger = console }) {
+export function createJobManager({ config, store, pipeline, voice = null, embedder = null, logger = console }) {
   const events = new EventEmitter();
   events.setMaxListeners(0);
   const queue = [];
@@ -102,30 +104,51 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
 
   // ---- building the stored transcript --------------------------------------------------------
 
-  function fromDeepgram(normalized, { model, mode, fallbackModelUsed }) {
+  function fromDeepgram(normalized, { model, mode, fallbackModelUsed, voiceResult = null }) {
     // Speakers with almost no speech are probably a diarization artefact: flag, never reassign.
     const minor = minorSpeakers(normalized.segments);
     const minorSet = new Set(minor.map((entry) => entry.speaker));
     for (const segment of normalized.segments) if (minorSet.has(segment.providerSpeaker)) segment.needsReview = true;
-    const speakers = normalized.speakerIndices.map((index) => ({ id: `speaker_${index}`, label: `Speaker ${index + 1}`, role: "unassigned" }));
-    const segments = normalized.segments.map((segment, index) => ({
-      id: `segment_${index + 1}`,
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text,
-      speakerId: segment.providerSpeaker === null ? null : `speaker_${segment.providerSpeaker}`,
-      needsReview: segment.needsReview,
-      providerSpeaker: segment.providerSpeaker,
-      confidence: segment.confidence,
-      speakerConfidence: segment.speakerConfidence,
-    }));
+
+    const identification = voiceResult?.identification ?? new Map();
+    const speakers = normalized.speakerIndices.map((index) => {
+      const found = identification.get(index);
+      return {
+        id: `speaker_${index}`, label: `Speaker ${index + 1}`,
+        role: "unassigned", // only the doctor confirms roles
+        identificationStatus: found ? found.status : "unavailable",
+        suggestedRole: found?.suggestedRole ?? null,
+      };
+    });
+    const uncertain = new Set(speakers.filter((sp) => sp.identificationStatus === "uncertain").map((sp) => sp.id));
+    const segments = normalized.segments.map((segment, index) => {
+      const speakerId = segment.providerSpeaker === null ? null : `speaker_${segment.providerSpeaker}`;
+      return {
+        id: `segment_${index + 1}`,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        text: segment.text,
+        speakerId,
+        // insufficient or ambiguous voice evidence for this speaker => the doctor should look
+        needsReview: segment.needsReview || (speakerId !== null && uncertain.has(speakerId)),
+        providerSpeaker: segment.providerSpeaker,
+        confidence: segment.confidence,
+        speakerConfidence: segment.speakerConfidence,
+      };
+    });
+    const fromVoice = voiceResult?.source === "independent";
     return {
       engine: "deepgram",
       speakers,
       segments,
       diarizationStatus: normalized.diarizationStatus === "failed" ? "failed" : "ok",
       diarizationResult: normalized.diarizationStatus,
-      providerMeta: { ...normalized.meta, requestedModel: model, mode, processedAt: now() },
+      speakerSource: voiceResult?.source ?? "deepgram",
+      voiceStatus: voiceResult?.voiceStatus ?? "not_enrolled",
+      providerMeta: {
+        ...normalized.meta, requestedModel: model, mode, processedAt: now(),
+        voice: voiceResult ? { source: voiceResult.source, status: voiceResult.voiceStatus, ...voiceResult.internal, speakers: Object.fromEntries([...identification].map(([k, v]) => [k, v])) } : null,
+      },
       warnings: [
         ...(fallbackModelUsed
           ? [{ code: "FALLBACK_MODEL_USED", message: `The general model (${model}) was used because the medical model was unavailable. It is not tuned for medical vocabulary: review carefully.` }]
@@ -134,8 +157,36 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
           code: "MINOR_SPEAKER_DETECTED",
           message: `Speaker ${entry.speaker + 1} has only ${entry.segments} short segment${entry.segments === 1 ? "" : "s"} (${Math.round(entry.seconds)} s of speech). This may be a speaker-detection error: check those segments and reassign them if needed.`,
         })),
+        ...(voiceResult?.warnings ?? []),
+        ...(fromVoice ? [] : []),
       ],
     };
+  }
+
+  /**
+   * Independent speaker analysis and doctor identification for one Deepgram result, when there is something to do: an enrolled
+   * doctor, or a single Deepgram speaker that independent evidence might split. Any failure leaves Deepgram's result as it was.
+   */
+  async function voiceAnalysis(job, normalized, getWav) {
+    if (!voice || !embedder || !config.voiceEnabled) return null;
+    try {
+      const profile = await voice.status(job.owner_id);
+      const references = profile.status === "enrolled" ? await voice.loadReferences(job.owner_id) : null;
+      const dgSpeakers = new Set(normalized.groups.flat().map((w) => w.speaker).filter((sp) => sp !== null)).size;
+      if (!(await embedder.available())) {
+        return references ? { normalized, source: "deepgram", voiceStatus: "unavailable", identification: new Map(), warnings: [], internal: {} } : null;
+      }
+      if (!references && dgSpeakers > 1) {
+        return profile.status === "needs_reenrollment" ? { normalized, source: "deepgram", voiceStatus: "needs_reenrollment", identification: new Map(), warnings: [], internal: {} } : null;
+      }
+      const wavPath = await getWav();
+      const result = await analyzeSpeakers({ normalized, wavPath, references, config, embedder });
+      if (!references && profile.status === "needs_reenrollment") result.voiceStatus = "needs_reenrollment";
+      return result;
+    } catch (error) {
+      logger.error(`voice analysis skipped: ${error?.name} ${error?.code ?? ""}`); // class only: never audio or embeddings
+      return null;
+    }
   }
 
   function fromLocal(result) {
@@ -155,8 +206,10 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
     };
   }
 
-  function complete(job, prepared, durationSeconds) {
+  /** Save the transcript, delete the retained recording, and only THEN announce completion (so nothing outlives the answer). */
+  async function complete(job, prepared, durationSeconds) {
     const transcription = store.completeJob(job.owner_id, job.id, { durationSeconds, ...prepared });
+    await removeAudio(job);
     finish(job.id);
     return transcription;
   }
@@ -212,8 +265,9 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
         }
         const normalized = normalizeDeepgramResponse(result, { reviewWordConfidence: config.reviewWordConfidence, reviewSpeakerConfidence: config.reviewSpeakerConfidence });
         if (normalized.empty) throw new DeepgramError("NO_SPEECH");
-        complete(job, fromDeepgram(normalized, { model, mode: "sync", fallbackModelUsed }), prepared.durationSeconds);
-        await removeAudio(job);
+        const voiceResult = await voiceAnalysis(job, normalized, () => toWav(prepared.path, path.join(workDir, "analysis.wav"), config));
+        await rm(workDir, { recursive: true, force: true }); // working files go before completion is announced
+        await complete(job, fromDeepgram(voiceResult?.normalized ?? normalized, { model, mode: "sync", fallbackModelUsed, voiceResult }), prepared.durationSeconds);
         return "completed";
       } catch (error) {
         if (!(error instanceof DeepgramError)) throw error;
@@ -241,8 +295,7 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
       try {
         const result = await pipeline.process(file, new AbortController().signal, { diarize: true, expectedSpeakers: job.expected_speakers ?? undefined });
         store.updateJob(job.id, { duration_seconds: result.durationSeconds, mode: "local" });
-        complete(job, fromLocal(result), result.durationSeconds);
-        await removeAudio(job);
+        await complete(job, fromLocal(result), result.durationSeconds);
         return;
       } catch (error) {
         // The local pipeline has its own small concurrency limit; wait briefly if it is momentarily full.
@@ -374,16 +427,26 @@ export function createJobManager({ config, store, pipeline, logger = console }) 
     const requestId = body?.metadata?.request_id;
     if (job.provider_request_id && requestId && requestId !== job.provider_request_id) return 400;
 
+    const cleanupDirs = [];
     try {
       const normalized = normalizeDeepgramResponse(body, { reviewWordConfidence: config.reviewWordConfidence, reviewSpeakerConfidence: config.reviewSpeakerConfidence });
       if (normalized.empty) {
         await fail(job, "NO_SPEECH");
         return 200;
       }
-      complete(job, fromDeepgram(normalized, { model: config.deepgramModel, mode: "callback", fallbackModelUsed: false }), job.duration_seconds);
-      await removeAudio(job);
+      // the recording is re-verified from the retained original: the callback arrives long after the upload's working files are gone
+      const voiceResult = await voiceAnalysis(job, normalized, async () => {
+        const dir = await makeWorkDir(config);
+        cleanupDirs.push(dir);
+        const prepared = await prepareRecording(job.audio_path, dir, config);
+        return toWav(prepared.path, path.join(dir, "analysis.wav"), config);
+      });
+      for (const dir of cleanupDirs) await rm(dir, { recursive: true, force: true });
+      await complete(job, fromDeepgram(voiceResult?.normalized ?? normalized, { model: config.deepgramModel, mode: "callback", fallbackModelUsed: false, voiceResult }), job.duration_seconds);
     } catch (error) {
       await fail(store.jobById(jobId), error instanceof DeepgramError ? error.code : "INTERNAL");
+    } finally {
+      for (const dir of cleanupDirs) await rm(dir, { recursive: true, force: true });
     }
     return 200;
   }

@@ -1,0 +1,66 @@
+{
+ "_readme": "Calibrated on SYNTHETIC (text-to-speech) identities only. Thresholds MUST be re-measured with real consenting speakers before any real use. See docs/VOICE_EVALUATION.md.",
+ "model": "speechbrain/spkrec-ecapa-voxceleb",
+ "embeddingVersion": "ecapa-v1-multicond",
+ "date": "2026-09-19",
+ "dataset": {
+  "identities": 27,
+  "calibrationIdentities": 11,
+  "heldoutIdentities": 16,
+  "note": "calibration and held-out identities are disjoint; siblings (same-name UK/US voices) are the same underlying voice"
+ },
+ "decision": {
+  "tMatch": 0.89,
+  "tReject": 0.839,
+  "margin": 0.0,
+  "minRegions": 3,
+  "minSpeechSeconds": 6,
+  "note": "score = max cosine over the profile references; a cluster is matched only if it is the ONLY one reaching tMatch",
+  "evidenceRule": "Doctor decisions need >= 3 regions and >= 6 s per speaker: with 1 region 55% of genuine doctor clusters scored below the reject line (wrongly 'unknown'), 3.9% with 3 regions. Non-doctors were never matched (0 of 4560 clusters) at any amount of evidence."
+ },
+ "clustering": {
+  "method": "average linkage on cosine distance",
+  "distanceThreshold": 0.55,
+  "minClusterSpeechSeconds": 2.5,
+  "minClusterRegions": 1,
+  "evidenceRule": "Measured: the correct-split rate was ~96% whether the smaller voice had 1 or 4 regions, and the false-split rate did not fall with more regions, so more evidence buys no measured safety. A floor of one region of at least 2.5 s remains so a cough or a laugh alone cannot become a speaker. Real-world artefacts (crosstalk, background TV) are NOT measured.",
+  "thresholdRule": "Upper part of the calibrated plateau (0.375-0.575; the centre, 0.475, was the first choice). Independent clustering only runs when Deepgram found ONE speaker, so a split that is too eager fabricates speakers while one that is too cautious just leaves Deepgram's answer: the costs are asymmetric. On real recordings 0.475 over-split one recording (a variable, hoarse voice became 4 speakers) and 0.55 did not, at equal recall (35/36 correct counts on 36 fixtures and pair recordings)."
+ },
+ "enrollment": {
+  "minVoicedSeconds": 6,
+  "maxSampleSeconds": 60,
+  "maxClipRatio": 0.01,
+  "minPeak": 0.02,
+  "windowMinSimilarity": 0.553,
+  "sampleCount": 3,
+  "sampleConsistency": 0.555,
+  "sampleConsistencyHeldout": {
+   "ownRejected": 0.0,
+   "differentCaught": 0.9824561403508771
+  },
+  "sampleConsistencyRule": "highest different-person sample-set similarity in the calibration voices (0.455) + 0.10, deliberately looser than the midpoint (0.679) because real speech varies more between recordings than synthetic speech",
+  "minVoicedSecondsRule": "75% of the shortest genuine synthetic sample (7.6 s detected speech, median 9.1 s): allows the natural pauses of a 10 s recording. An earlier 8 s minimum sat above the shortest genuine sample and wrongly rejected honest enrollments."
+ },
+ "heldoutResults": {
+  "sessions": {
+   "doctorMatched": 0.8639788997739262,
+   "doctorUncertain": 0.12886209495101733,
+   "doctorUnknown": 0.007159005275056519,
+   "falseDoctorMatchRate": 0.00299895036737142,
+   "falseDoctorMatches": 20,
+   "nonDoctorClusters": 6669,
+   "falseMatchesFromSimilarVoices": 20,
+   "doctorClusters": 2654
+  },
+  "clusterCounting": {
+   "1spk_correct": 0.9979757085020243,
+   "2spk_correct": 0.9623015873015873,
+   "3spk_correct": 0.9163346613545816,
+   "n": {
+    "1": 494,
+    "2": 504,
+    "3": 502
+   }
+  }
+ }
+}

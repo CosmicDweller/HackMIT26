@@ -1,0 +1,40 @@
+{
+ "durationMs": 29587,
+ "turns": [
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I have been very tired for about two weeks and I get dizzy when I stand up quickly.",
+   "startMs": 950,
+   "endMs": 6315
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "It comes and goes, mostly in the afternoon, and resting seems to help a little.",
+   "startMs": 6965,
+   "endMs": 12563
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Good afternoon, please have a seat and tell me what brings you in today.",
+   "startMs": 13213,
+   "endMs": 17609
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I take one tablet for my blood pressure every morning and a vitamin most days.",
+   "startMs": 18259,
+   "endMs": 23497
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "No, nothing else, except a glass of wine now and then at the weekend.",
+   "startMs": 24147,
+   "endMs": 29187
+  }
+ ]
+}

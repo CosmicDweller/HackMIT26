@@ -1,0 +1,61 @@
+{
+ "durationMs": 44353,
+ "turns": [
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I have been very tired for about two weeks and I get dizzy when I stand up quickly.",
+   "startMs": 950,
+   "endMs": 6315
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "I have taken your weight and temperature, and the results are on the chart.",
+   "startMs": 6965,
+   "endMs": 11252
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "It comes and goes, mostly in the afternoon, and resting seems to help a little.",
+   "startMs": 11902,
+   "endMs": 17500
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "Shall I bring in the paperwork for the blood test before you leave today?",
+   "startMs": 18150,
+   "endMs": 22469
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I take one tablet for my blood pressure every morning and a vitamin most days.",
+   "startMs": 23119,
+   "endMs": 28357
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "I have taken your weight and temperature, and the results are on the chart.",
+   "startMs": 29007,
+   "endMs": 33294
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "No, nothing else, except a glass of wine now and then at the weekend.",
+   "startMs": 33944,
+   "endMs": 38984
+  },
+  {
+   "speaker": "N",
+   "voice": "Grandma (English (US))",
+   "text": "Shall I bring in the paperwork for the blood test before you leave today?",
+   "startMs": 39634,
+   "endMs": 43953
+  }
+ ]
+}

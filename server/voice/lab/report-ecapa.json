@@ -1,0 +1,214 @@
+{
+ "model": "ecapa",
+ "identities": {
+  "calibration": 11,
+  "heldout": 16
+ },
+ "targets": {
+  "far": 0.001,
+  "reject": 0.01
+ },
+ "representation(calibration)": {
+  "single": {
+   "eer": 0.030492424242424244,
+   "eerThreshold": 0.6145658493041992,
+   "genuineMean": 0.743890492753549,
+   "impostorMax": 0.7787091135978699,
+   "impostorMean": 0.14033981826249864,
+   "trials": [
+    264,
+    2640
+   ]
+  },
+  "mean": {
+   "eer": 0.026325757575757575,
+   "eerThreshold": 0.6510035991668701,
+   "genuineMean": 0.7650611797968546,
+   "impostorMax": 0.8146572709083557,
+   "impostorMean": 0.14668100622736596,
+   "trials": [
+    264,
+    2640
+   ]
+  },
+  "multi": {
+   "eer": 0.026136363636363638,
+   "eerThreshold": 0.6606157422065735,
+   "genuineMean": 0.7680398011297891,
+   "impostorMax": 0.8105379343032837,
+   "impostorMean": 0.15957461475944992,
+   "trials": [
+    264,
+    2640
+   ]
+  }
+ },
+ "chosenRepresentation": "multi",
+ "thresholds": {
+  "match": 0.7831262350082397,
+  "reject": 0.6366071701049805,
+  "calibrationFAR": 0.0007575757575757576,
+  "calibrationRejectedGenuine": 0.007575757575757576
+ },
+ "heldout": {
+  "overall": {
+   "genuineTrials": 384,
+   "impostorTrials": 5760,
+   "falseAcceptRate": 0.008854166666666666,
+   "falseRejectRate": 0.08854166666666667,
+   "genuineUncertain": 0.5520833333333334,
+   "impostorUncertain": 0.03784722222222222,
+   "genuineMatched": 0.359375,
+   "genuineMean": 0.7495952687847117,
+   "impostorMean": 0.248317768375192,
+   "impostorMax": 0.9218415021896362
+  },
+  "eer": 0.0546875,
+  "byCondition": {
+   "clean": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0234375,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 0.15625,
+    "impostorUncertain": 0.03697916666666667,
+    "genuineMatched": 0.84375,
+    "genuineMean": 0.8306802366860211,
+    "impostorMean": 0.28816245600222223,
+    "impostorMax": 0.9218415021896362
+   },
+   "mic": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0020833333333333333,
+    "falseRejectRate": 0.1171875,
+    "genuineUncertain": 0.7265625,
+    "impostorUncertain": 0.042708333333333334,
+    "genuineMatched": 0.15625,
+    "genuineMean": 0.7178759863600135,
+    "impostorMean": 0.24017971355254605,
+    "impostorMax": 0.7929678559303284
+   },
+   "noisy": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0010416666666666667,
+    "falseRejectRate": 0.1484375,
+    "genuineUncertain": 0.7734375,
+    "impostorUncertain": 0.033854166666666664,
+    "genuineMatched": 0.078125,
+    "genuineMean": 0.7002295833081007,
+    "impostorMean": 0.21661113557080777,
+    "impostorMax": 0.7897942066192627
+   }
+  },
+  "byDuration": {
+   "<2.5s": {
+    "genuineTrials": 3,
+    "impostorTrials": 45,
+    "falseAcceptRate": 0.0,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 1.0,
+    "impostorUncertain": 0.0,
+    "genuineMatched": 0.0,
+    "genuineMean": 0.7118566036224365,
+    "impostorMean": 0.04341555086688863,
+    "impostorMax": 0.14076299965381622
+   },
+   "2.5-3.5s": {
+    "genuineTrials": 177,
+    "impostorTrials": 2655,
+    "falseAcceptRate": 0.0064030131826741995,
+    "falseRejectRate": 0.0903954802259887,
+    "genuineUncertain": 0.5706214689265536,
+    "impostorUncertain": 0.03728813559322034,
+    "genuineMatched": 0.3389830508474576,
+    "genuineMean": 0.7469992930606261,
+    "impostorMean": 0.2382898786512121,
+    "impostorMax": 0.8610340356826782
+   },
+   "3.5-5s": {
+    "genuineTrials": 204,
+    "impostorTrials": 3060,
+    "falseAcceptRate": 0.011111111111111112,
+    "falseRejectRate": 0.08823529411764706,
+    "genuineUncertain": 0.5294117647058824,
+    "impostorUncertain": 0.03888888888888889,
+    "genuineMatched": 0.38235294117647056,
+    "genuineMean": 0.7524026398565254,
+    "impostorMean": 0.26003170530494374,
+    "impostorMax": 0.9218415021896362
+   },
+   ">=5s": null
+  },
+  "similarPairsImpostors": {
+   "genuineTrials": 384,
+   "impostorTrials": 288,
+   "falseAcceptRate": 0.17708333333333334,
+   "falseRejectRate": 0.08854166666666667,
+   "genuineUncertain": 0.5520833333333334,
+   "impostorUncertain": 0.6736111111111112,
+   "genuineMatched": 0.359375,
+   "genuineMean": 0.7495952687847117,
+   "impostorMean": 0.7109915984587537,
+   "impostorMax": 0.9218415021896362
+  },
+  "dissimilarImpostors": {
+   "genuineTrials": 384,
+   "impostorTrials": 5472,
+   "falseAcceptRate": 0.0,
+   "falseRejectRate": 0.08854166666666667,
+   "genuineUncertain": 0.5520833333333334,
+   "impostorUncertain": 0.0043859649122807015,
+   "genuineMatched": 0.359375,
+   "genuineMean": 0.7495952687847117,
+   "impostorMean": 0.22396651416026772,
+   "impostorMax": 0.7087193131446838
+  },
+  "similarPairScores": {
+   "grandma_uk/grandma_us": 0.7631525186200937,
+   "sandy_uk/sandy_us": 0.6677314465244611,
+   "rocko_uk/rocko_us": 0.7212881545225779,
+   "grandpa_uk/grandpa_us": 0.7181734082599481,
+   "shelley_uk/shelley_us": 0.6912292838096619,
+   "reed_uk/reed_us": 0.7043747790157795
+  },
+  "clusterLevel": {
+   "1": {
+    "regions": 1,
+    "falseAcceptRate": 0.009583333333333333,
+    "falseRejectRate": 0.084375,
+    "genuineUncertain": 0.575,
+    "impostorClusters": 4800
+   },
+   "2": {
+    "regions": 2,
+    "falseAcceptRate": 0.017708333333333333,
+    "falseRejectRate": 0.021875,
+    "genuineUncertain": 0.265625,
+    "impostorClusters": 4800
+   },
+   "3": {
+    "regions": 3,
+    "falseAcceptRate": 0.0275,
+    "falseRejectRate": 0.003125,
+    "genuineUncertain": 0.140625,
+    "impostorClusters": 4800
+   },
+   "5": {
+    "regions": 5,
+    "falseAcceptRate": 0.040625,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 0.034375,
+    "impostorClusters": 4800
+   },
+   "8": {
+    "regions": 8,
+    "falseAcceptRate": 0.04541666666666667,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 0.01875,
+    "impostorClusters": 4800
+   }
+  }
+ }
+}

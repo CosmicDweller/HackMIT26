@@ -1,0 +1,104 @@
+{
+ "model": "ecapa",
+ "profileMode": "clean",
+ "policy": {
+  "tMatch": 0.85,
+  "tReject": 0.734,
+  "margin": 0.0,
+  "minRegions": 3
+ },
+ "calibration": {
+  "doctorMatched": 0.4478052379195869,
+  "doctorUncertain": 0.5418664699372925,
+  "doctorUnknown": 0.010328292143120619,
+  "falseDoctorMatchRate": 0.0,
+  "falseDoctorMatches": 0,
+  "nonDoctorClusters": 6683,
+  "falseMatchesFromSimilarVoices": 0,
+  "doctorClusters": 2711
+ },
+ "heldout": {
+  "doctorMatched": 0.34476262245666917,
+  "doctorUncertain": 0.5753579502637528,
+  "doctorUnknown": 0.07987942727957799,
+  "falseDoctorMatchRate": 0.003598740440845704,
+  "falseDoctorMatches": 24,
+  "nonDoctorClusters": 6669,
+  "falseMatchesFromSimilarVoices": 24,
+  "doctorClusters": 2654
+ },
+ "heldoutByCondition": {
+  "clean": {
+   "doctorMatched": 0.9421686746987952,
+   "doctorUncertain": 0.05783132530120482,
+   "doctorUnknown": 0.0,
+   "falseDoctorMatchRate": 0.011065006915629323,
+   "falseDoctorMatches": 24,
+   "nonDoctorClusters": 2169,
+   "falseMatchesFromSimilarVoices": 24,
+   "doctorClusters": 830
+  },
+  "mic": {
+   "doctorMatched": 0.10344827586206896,
+   "doctorUncertain": 0.7769396551724138,
+   "doctorUnknown": 0.11961206896551724,
+   "falseDoctorMatchRate": 0.0,
+   "falseDoctorMatches": 0,
+   "nonDoctorClusters": 2260,
+   "falseMatchesFromSimilarVoices": 0,
+   "doctorClusters": 928
+  },
+  "noisy": {
+   "doctorMatched": 0.041294642857142856,
+   "doctorUncertain": 0.8459821428571429,
+   "doctorUnknown": 0.11272321428571429,
+   "falseDoctorMatchRate": 0.0,
+   "falseDoctorMatches": 0,
+   "nonDoctorClusters": 2240,
+   "falseMatchesFromSimilarVoices": 0,
+   "doctorClusters": 896
+  }
+ },
+ "heldoutByKind": {
+  "DP": {
+   "doctorMatched": 0.33884297520661155,
+   "doctorUncertain": 0.5912847483095417,
+   "doctorUnknown": 0.06987227648384674,
+   "falseDoctorMatchRate": 0.0,
+   "falseDoctorMatches": 0,
+   "nonDoctorClusters": 1331,
+   "falseMatchesFromSimilarVoices": 0,
+   "doctorClusters": 1331
+  },
+  "DPN": {
+   "doctorMatched": 0.3507180650037793,
+   "doctorUncertain": 0.5593348450491308,
+   "doctorUnknown": 0.08994708994708994,
+   "falseDoctorMatchRate": 0.0,
+   "falseDoctorMatches": 0,
+   "nonDoctorClusters": 2646,
+   "falseMatchesFromSimilarVoices": 0,
+   "doctorClusters": 1323
+  },
+  "PN": {
+   "doctorMatched": 0.0,
+   "doctorUncertain": 0.0,
+   "doctorUnknown": 0.0,
+   "falseDoctorMatchRate": 0.008915304606240713,
+   "falseDoctorMatches": 24,
+   "nonDoctorClusters": 2692,
+   "falseMatchesFromSimilarVoices": 24,
+   "doctorClusters": 0
+  }
+ },
+ "heldoutWithoutMarginRule": {
+  "doctorMatched": 0.34476262245666917,
+  "doctorUncertain": 0.5753579502637528,
+  "doctorUnknown": 0.07987942727957799,
+  "falseDoctorMatchRate": 0.003598740440845704,
+  "falseDoctorMatches": 24,
+  "nonDoctorClusters": 6669,
+  "falseMatchesFromSimilarVoices": 24,
+  "doctorClusters": 2654
+ }
+}

@@ -1,0 +1,214 @@
+{
+ "model": "wespeaker",
+ "identities": {
+  "calibration": 11,
+  "heldout": 16
+ },
+ "targets": {
+  "far": 0.001,
+  "reject": 0.01
+ },
+ "representation(calibration)": {
+  "single": {
+   "eer": 0.21609848484848485,
+   "eerThreshold": 0.6142747402191162,
+   "genuineMean": 0.7619256116449833,
+   "impostorMax": 0.9575530290603638,
+   "impostorMean": 0.5295087500447125,
+   "trials": [
+    264,
+    2640
+   ]
+  },
+  "mean": {
+   "eer": 0.2196969696969697,
+   "eerThreshold": 0.6126133799552917,
+   "genuineMean": 0.7673729741663644,
+   "impostorMax": 0.9604864716529846,
+   "impostorMean": 0.5336465517002524,
+   "trials": [
+    264,
+    2640
+   ]
+  },
+  "multi": {
+   "eer": 0.22821969696969696,
+   "eerThreshold": 0.6183739900588989,
+   "genuineMean": 0.7715538719838316,
+   "impostorMax": 0.9583326578140259,
+   "impostorMean": 0.5423107224149686,
+   "trials": [
+    264,
+    2640
+   ]
+  }
+ },
+ "chosenRepresentation": "single",
+ "thresholds": {
+  "match": 0.9485301971435547,
+  "reject": 0.46525153517723083,
+  "calibrationFAR": 0.0007575757575757576,
+  "calibrationRejectedGenuine": 0.007575757575757576
+ },
+ "heldout": {
+  "overall": {
+   "genuineTrials": 384,
+   "impostorTrials": 5760,
+   "falseAcceptRate": 0.0008680555555555555,
+   "falseRejectRate": 0.15104166666666666,
+   "genuineUncertain": 0.8098958333333334,
+   "impostorUncertain": 0.45381944444444444,
+   "genuineMatched": 0.0390625,
+   "genuineMean": 0.6694911206917217,
+   "impostorMean": 0.47743071243684326,
+   "impostorMax": 0.957210123538971
+  },
+  "eer": 0.3125,
+  "byCondition": {
+   "clean": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0026041666666666665,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 0.8828125,
+    "impostorUncertain": 0.8390625,
+    "genuineMatched": 0.1171875,
+    "genuineMean": 0.9169360497035086,
+    "impostorMean": 0.6095506988388176,
+    "impostorMax": 0.957210123538971
+   },
+   "mic": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0,
+    "falseRejectRate": 0.078125,
+    "genuineUncertain": 0.921875,
+    "impostorUncertain": 0.30052083333333335,
+    "genuineMatched": 0.0,
+    "genuineMean": 0.5896065959241241,
+    "impostorMean": 0.4173807860507319,
+    "impostorMax": 0.8088175058364868
+   },
+   "noisy": {
+    "genuineTrials": 128,
+    "impostorTrials": 1920,
+    "falseAcceptRate": 0.0,
+    "falseRejectRate": 0.375,
+    "genuineUncertain": 0.625,
+    "impostorUncertain": 0.221875,
+    "genuineMatched": 0.0,
+    "genuineMean": 0.5019307164475322,
+    "impostorMean": 0.40536065242098024,
+    "impostorMax": 0.7258673906326294
+   }
+  },
+  "byDuration": {
+   "<2.5s": {
+    "genuineTrials": 3,
+    "impostorTrials": 45,
+    "falseAcceptRate": 0.0,
+    "falseRejectRate": 0.0,
+    "genuineUncertain": 1.0,
+    "impostorUncertain": 0.4888888888888889,
+    "genuineMatched": 0.0,
+    "genuineMean": 0.815030594666799,
+    "impostorMean": 0.44491545293066237,
+    "impostorMax": 0.6591037511825562
+   },
+   "2.5-3.5s": {
+    "genuineTrials": 177,
+    "impostorTrials": 2655,
+    "falseAcceptRate": 0.0003766478342749529,
+    "falseRejectRate": 0.14124293785310735,
+    "genuineUncertain": 0.8531073446327684,
+    "impostorUncertain": 0.45725047080979286,
+    "genuineMatched": 0.005649717514124294,
+    "genuineMean": 0.6803621974705303,
+    "impostorMean": 0.4735405273861804,
+    "impostorMax": 0.9509754180908203
+   },
+   "3.5-5s": {
+    "genuineTrials": 204,
+    "impostorTrials": 3060,
+    "falseAcceptRate": 0.00130718954248366,
+    "falseRejectRate": 0.16176470588235295,
+    "genuineUncertain": 0.7696078431372549,
+    "impostorUncertain": 0.4503267973856209,
+    "genuineMatched": 0.06862745098039216,
+    "genuineMean": 0.6579185765163571,
+    "impostorMean": 0.48128418563530334,
+    "impostorMax": 0.957210123538971
+   },
+   ">=5s": null
+  },
+  "similarPairsImpostors": {
+   "genuineTrials": 384,
+   "impostorTrials": 288,
+   "falseAcceptRate": 0.017361111111111112,
+   "falseRejectRate": 0.15104166666666666,
+   "genuineUncertain": 0.8098958333333334,
+   "impostorUncertain": 0.7604166666666666,
+   "genuineMatched": 0.0390625,
+   "genuineMean": 0.6694911206917217,
+   "impostorMean": 0.6383893210440874,
+   "impostorMax": 0.957210123538971
+  },
+  "dissimilarImpostors": {
+   "genuineTrials": 384,
+   "impostorTrials": 5472,
+   "falseAcceptRate": 0.0,
+   "falseRejectRate": 0.15104166666666666,
+   "genuineUncertain": 0.8098958333333334,
+   "impostorUncertain": 0.4376827485380117,
+   "genuineMatched": 0.0390625,
+   "genuineMean": 0.6694911206917217,
+   "impostorMean": 0.4689592067206725,
+   "impostorMax": 0.9046833515167236
+  },
+  "similarPairScores": {
+   "grandpa_uk/grandpa_us": 0.5802452502151331,
+   "shelley_uk/shelley_us": 0.6561634354293346,
+   "reed_uk/reed_us": 0.6852702181786299,
+   "sandy_uk/sandy_us": 0.6028714689115683,
+   "rocko_uk/rocko_us": 0.6714291740208864,
+   "grandma_uk/grandma_us": 0.6343563795089722
+  },
+  "clusterLevel": {
+   "1": {
+    "regions": 1,
+    "falseAcceptRate": 0.0010416666666666667,
+    "falseRejectRate": 0.153125,
+    "genuineUncertain": 0.8,
+    "impostorClusters": 4800
+   },
+   "2": {
+    "regions": 2,
+    "falseAcceptRate": 0.0008333333333333334,
+    "falseRejectRate": 0.046875,
+    "genuineUncertain": 0.925,
+    "impostorClusters": 4800
+   },
+   "3": {
+    "regions": 3,
+    "falseAcceptRate": 0.0008333333333333334,
+    "falseRejectRate": 0.028125,
+    "genuineUncertain": 0.940625,
+    "impostorClusters": 4800
+   },
+   "5": {
+    "regions": 5,
+    "falseAcceptRate": 0.0004166666666666667,
+    "falseRejectRate": 0.003125,
+    "genuineUncertain": 0.9625,
+    "impostorClusters": 4800
+   },
+   "8": {
+    "regions": 8,
+    "falseAcceptRate": 0.0,
+    "falseRejectRate": 0.003125,
+    "genuineUncertain": 0.9875,
+    "impostorClusters": 4800
+   }
+  }
+ }
+}
