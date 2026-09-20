@@ -76,17 +76,21 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
   }
 
   async function handleSaveDraft() {
-    const ok = await save(sections);
-    if (ok) {
+    const saved = await save(sections);
+    if (saved) {
       setDraft(null);
       setEditingSection(null);
     }
   }
 
   async function handleApprove() {
+    // A save advances the revision, so approve with the revision it returned — the one
+    // captured in this closure is stale as soon as the save resolves.
+    let revision = note!.revision;
     if (dirty) {
-      const ok = await save(sections);
-      if (!ok) return;
+      const saved = await save(sections);
+      if (!saved) return;
+      revision = saved.revision;
       setDraft(null);
       setEditingSection(null);
     }
@@ -97,7 +101,7 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
         : "Approve this SOAP note? Once approved it becomes read-only and can be exported.",
     );
     if (!proceed) return;
-    await approve();
+    await approve(revision);
   }
 
   function handleDiscardConflict() {

@@ -18,9 +18,11 @@ export function useSoapNote(transcriptionId: string) {
   const [approveError, setApproveError] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Guards against starting a second generation/recovery — set once and never reset, so
-  // React 18 StrictMode's dev-only double-invoke of effects can't cause a duplicate.
-  const startedRef = useRef(false);
+  // Which transcription we've already started a fetch/recovery for. Guards against a
+  // duplicate generation from React 18 StrictMode's dev-only double-invoke of effects,
+  // while still re-fetching when the id genuinely changes (a plain boolean would pin the
+  // first transcript's note in place and show it under a different consultation).
+  const startedForRef = useRef<string | null>(null);
   // Whether the component is currently mounted right now — separate from startedRef.
   // StrictMode's synthetic mount -> cleanup -> remount cycle must not permanently block
   // the single in-flight fetch from ever applying its result (that fetch's own promise
@@ -32,40 +34,56 @@ export function useSoapNote(transcriptionId: string) {
     pollRef.current = null;
   }, []);
 
+  /** True while the given id is still the one being displayed — an in-flight request for a
+   * previous transcript must never write its result over the current one. */
+  const stillCurrent = useCallback(
+    (id: string) => mountedRef.current && startedForRef.current === id,
+    [],
+  );
+
   const poll = useCallback(() => {
     clearPoll();
+    const id = transcriptionId;
     pollRef.current = setTimeout(async () => {
       try {
-        const latest = await soap.get(transcriptionId);
-        if (!mountedRef.current) return;
+        const latest = await soap.get(id);
+        if (!stillCurrent(id)) return;
         if (latest) {
           setNote(latest);
           if (latest.status === "processing") poll();
         }
       } catch {
-        if (mountedRef.current) poll(); // transient network hiccup — keep trying
+        if (stillCurrent(id)) poll(); // transient network hiccup — keep trying
       }
     }, POLL_INTERVAL_MS);
-  }, [transcriptionId, clearPoll]);
+  }, [transcriptionId, clearPoll, stillCurrent]);
 
   useEffect(() => {
     mountedRef.current = true;
 
-    if (!startedRef.current) {
-      startedRef.current = true;
+    if (startedForRef.current !== transcriptionId) {
+      const id = transcriptionId;
+      startedForRef.current = id;
+      // Drop the previous transcript's note so it can't show under this one while loading.
+      setNote(null);
+      setConflictNote(null);
+      setLoadError(null);
+      setSaveError(null);
+      setApproveError(null);
+      setSaveState("idle");
+
       (async () => {
         setLoading(true);
-        setLoadError(null);
         try {
-          let current = await soap.get(transcriptionId);
-          if (!current) current = await soap.create(transcriptionId); // idempotent recovery only
-          if (!mountedRef.current) return;
+          let current = await soap.get(id);
+          if (!current) current = await soap.create(id); // idempotent recovery only
+          if (!stillCurrent(id)) return;
           setNote(current);
           if (current.status === "processing") poll();
         } catch {
-          if (mountedRef.current) setLoadError("Couldn't load the SOAP note for this consultation.");
+          if (stillCurrent(id)) setLoadError("Couldn't load the SOAP note for this consultation.");
         } finally {
-          if (mountedRef.current) setLoading(false);
+          if (stillCurrent(id)) setLoading(false);
         }
       })();
     }
@@ -77,16 +95,19 @@ export function useSoapNote(transcriptionId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcriptionId]);
 
+  /** Returns the saved note (whose `revision` has advanced), or null on failure — callers
+   * that act on the note afterwards must use the returned revision, not the one captured
+   * in their render closure, which is stale the moment this resolves. */
   const save = useCallback(
-    async (sections: SoapSections): Promise<boolean> => {
-      if (!note) return false;
+    async (sections: SoapSections): Promise<SoapNote | null> => {
+      if (!note) return null;
       setSaveState("saving");
       setSaveError(null);
       try {
         const updated = await soap.update(transcriptionId, { sections, revision: note.revision });
         setNote(updated);
         setSaveState("saved");
-        return true;
+        return updated;
       } catch (err) {
         if (err instanceof TranscribeApiError && err.code === "CONFLICT") {
           const latest = await soap.get(transcriptionId).catch(() => null);
@@ -96,18 +117,21 @@ export function useSoapNote(transcriptionId: string) {
           setSaveError("Couldn't save. Try again.");
         }
         setSaveState("error");
-        return false;
+        return null;
       }
     },
     [note, transcriptionId],
   );
 
-  const approve = useCallback(async (): Promise<boolean> => {
+  /** `revision` overrides the one from this render — pass it after an in-handler save,
+   * otherwise the just-saved change makes our captured revision stale and the backend
+   * (correctly) rejects the approval as a conflict. */
+  const approve = useCallback(async (revision?: number): Promise<boolean> => {
     if (!note) return false;
     setApproving(true);
     setApproveError(null);
     try {
-      const approved = await soap.approve(transcriptionId, note.revision);
+      const approved = await soap.approve(transcriptionId, revision ?? note.revision);
       setNote(approved);
       return true;
     } catch (err) {

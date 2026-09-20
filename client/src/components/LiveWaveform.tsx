@@ -32,7 +32,9 @@ export function LiveWaveform({ stream, className }: LiveWaveformProps) {
       // No live input — draw a flat idle line instead of an empty canvas.
       const { width, height } = canvas;
       ctx.clearRect(0, 0, width, height);
-      ctx.strokeStyle = "currentColor";
+      // Canvas has no "currentColor" keyword (assigning it is silently ignored, leaving
+      // black — invisible in dark mode); resolve the inherited text color instead.
+      ctx.strokeStyle = getComputedStyle(canvas).color;
       ctx.globalAlpha = 0.2;
       ctx.lineWidth = 2;
       ctx.beginPath();

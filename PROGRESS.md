@@ -1,7 +1,44 @@
 # Progress
 
 ## Current milestone
-**Recording limit lowered from 2 hours to 30 minutes.** Product decision,
+**Bug-hunt pass over `main` + `kv`; three client bugs found, reproduced and
+fixed.** Server is clean — its suite passes (321 tests: 315 pass, 0 fail, 6
+skipped opt-in live tests) and a hand review of the new voice
+analysis/embedder code found nothing. All three bugs were in the client,
+which has no automated tests; each was reproduced in the browser before
+fixing and re-verified after.
+
+1. **Approving a note with unsaved edits always failed with a false
+   "changed elsewhere" conflict** (`SoapEditor.tsx`). `handleApprove` saves
+   first, then approves — but `approve` was bound to the `note` captured at
+   click time, so it sent the pre-save revision while the save had already
+   advanced the server to the next one. Reproduced: server reached revision
+   2, approve sent 1, got a 409, note stayed unapproved and the doctor saw a
+   conflict nobody caused. This is the exact "save current edits, then
+   approve" sequence the brief requires, so it broke a stated requirement.
+   Missed earlier because the end-to-end test clicked Save Draft *before*
+   Approve. Fixed by having `save()` return the updated note and `approve()`
+   take a revision override. Re-verified: same scenario now approves
+   cleanly with the edit included and no conflict banner.
+2. **SOAP note didn't re-fetch when the route's `:id` changed**
+   (`useSoapNote.ts`). The `startedRef` guard added for StrictMode was never
+   reset, so the effect re-ran on an id change but skipped the fetch —
+   showing one consultation's SOAP note under another (confirmed directly:
+   URL showed transcript B while A's review flag and conflict banner were
+   still rendered). `useTranscriptionEditor` *does* re-fetch, so the pairing
+   would have been transcript B + note A — a wrong-consultation mismatch.
+   Not reachable through today's UI (no transcript-to-transcript links, so
+   every path unmounts the viewer), but a landmine for anyone adding
+   next/previous navigation. Fixed by keying the guard on the id, resetting
+   per-note state on change, guarding late-resolving requests, and keying
+   `SoapEditor` by transcript id so its local draft can't carry over.
+3. **Idle waveform line invisible in dark mode** (`LiveWaveform.tsx`).
+   `ctx.strokeStyle = "currentColor"` — canvas has no such keyword;
+   verified the assignment is silently ignored, leaving black. Fixed to
+   resolve the inherited color via `getComputedStyle`. Cosmetic.
+
+## Previous milestone — recording limit lowered from 2 hours to 30 minutes
+Product decision,
 client-side change (`useAudioRecorder.ts`'s `MAX_RECORDING_SECONDS`:
 7200 -> 1800); the actual enforcement point is the backend's job endpoint
 limit, which needs the matching change there — flagged on issue #3. The

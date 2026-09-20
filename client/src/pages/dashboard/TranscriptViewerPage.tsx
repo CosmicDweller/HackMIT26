@@ -167,7 +167,13 @@ export function TranscriptViewerPage() {
         </p>
       )}
 
-      <SoapEditor transcription={transcription} onClaimClick={handleClaimClick} />
+      {/* Keyed by transcript id so switching consultations resets the editor's local
+          draft/edit state — a draft from one note must never be saved onto another. */}
+      <SoapEditor
+        key={transcription.id}
+        transcription={transcription}
+        onClaimClick={handleClaimClick}
+      />
 
       <div className="rounded-lg border border-border">
         <button
