@@ -103,6 +103,18 @@ if (await executableExists(config.ffprobeBin)) ok(`${config.ffprobeBin} found (r
 else fail("ffprobe not found (it ships with FFmpeg)", "brew install ffmpeg   (or set FFPROBE_BIN)");
 console.log(`  info  recordings are stored in ${path.relative(serverDir, config.uploadDir)} until processed (failed jobs: ${config.audioRetentionHours} h)`);
 
+console.log("\nDoctor voice recognition");
+{
+  const { createEmbedder } = await import("../services/voice/embedder.js");
+  const { parseKey } = await import("../services/voice/protect.js");
+  const embedder = createEmbedder(config);
+  if (!config.voiceEnabled) warn("disabled (VOICE_ENABLED=false)");
+  else if (await embedder.available()) ok(`ECAPA-TDNN model installed (${await embedder.modelVersion()})`);
+  else warn("not installed: doctors cannot enroll a voice, and merged voices cannot be separated", "npm run setup:voice");
+  if (parseKey(config.voiceProfileKey)) ok("VOICE_PROFILE_KEY is set (32 bytes)");
+  else warn("VOICE_PROFILE_KEY is not set: voice enrollment is refused", "add VOICE_PROFILE_KEY=$(openssl rand -base64 32) to server/.env");
+}
+
 console.log("\nAccounts");
 if (config.supabaseUrl) {
   ok(`Supabase Auth configured (${new URL(config.supabaseUrl).host})`);

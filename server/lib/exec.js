@@ -8,9 +8,9 @@ import path from "node:path";
  * Aborting `signal` kills the process. Rejects with an Error carrying `.notFound`
  * (executable missing), `.timedOut` or `.aborted`.
  */
-export function run(file, args, { timeoutMs, signal, maxBuffer = 1024 * 1024 } = {}) {
+export function run(file, args, { timeoutMs, signal, input, maxBuffer = 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       file,
       args,
       { timeout: timeoutMs, signal, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true },
@@ -24,6 +24,8 @@ export function run(file, args, { timeoutMs, signal, maxBuffer = 1024 * 1024 } =
         reject(error);
       },
     );
+    // `input` (for example a voice profile) goes to the child's stdin: never on the command line, where it would show up in `ps`.
+    if (input !== undefined) child.stdin?.end(input);
   });
 }
 

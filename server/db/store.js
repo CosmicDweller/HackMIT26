@@ -88,6 +88,32 @@ const MIGRATIONS = [
   CREATE INDEX transcription_jobs_owner ON transcription_jobs (owner_id, created_at DESC);
   CREATE INDEX transcription_jobs_status ON transcription_jobs (status);
   `,
+  // 4: doctor voice profiles and voice-identification results.
+  //  - voice_profiles: ONE profile per doctor (the primary key is the verified owner id). `ciphertext` is the
+  //    AES-256-GCM encrypted reference embeddings (biometric data); nothing else about the voice is stored, and raw
+  //    enrollment audio is never kept.
+  //  - transcriptions.speaker_source: which analysis produced the speaker labels (deepgram | independent);
+  //    transcriptions.voice_status: whether/why the doctor's voice was identified.
+  //  - speakers: model-generated identification (never a confirmed role) kept apart from the doctor's `role`.
+  `
+  CREATE TABLE voice_profiles (
+    owner_id            TEXT PRIMARY KEY REFERENCES doctors(id) ON DELETE CASCADE,
+    status              TEXT NOT NULL CHECK (status IN ('enrolled')),
+    model_name          TEXT NOT NULL,
+    model_version       TEXT NOT NULL,
+    embedding_version   TEXT NOT NULL,
+    sample_count        INTEGER NOT NULL,
+    consent_recorded_at TEXT NOT NULL,
+    consent_version     TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    ciphertext          BLOB NOT NULL
+  );
+  ALTER TABLE transcriptions ADD COLUMN speaker_source TEXT;
+  ALTER TABLE transcriptions ADD COLUMN voice_status TEXT;
+  ALTER TABLE speakers ADD COLUMN identification_status TEXT;
+  ALTER TABLE speakers ADD COLUMN suggested_role TEXT;
+  `,
 ];
 
 export function openStore(dbPath) {
@@ -124,10 +150,21 @@ export function openStore(dbPath) {
     ),
     insertTranscription: db.prepare(
       `INSERT INTO transcriptions (id, owner_id, created_at, duration_seconds, text, diarization_status, speaker_count, engine,
-                                   diarization_result, provider_meta, warnings)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                   diarization_result, provider_meta, warnings, speaker_source, voice_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
-    insertSpeaker: db.prepare("INSERT INTO speakers (transcription_id, id, label, role) VALUES (?, ?, ?, ?)"),
+    insertSpeaker: db.prepare(
+      "INSERT INTO speakers (transcription_id, id, label, role, identification_status, suggested_role) VALUES (?, ?, ?, ?, ?, ?)",
+    ),
+    voiceGet: db.prepare("SELECT * FROM voice_profiles WHERE owner_id = ?"),
+    voicePut: db.prepare(
+      `INSERT INTO voice_profiles (owner_id, status, model_name, model_version, embedding_version, sample_count, consent_recorded_at, consent_version, created_at, updated_at, ciphertext)
+       VALUES (?, 'enrolled', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (owner_id) DO UPDATE SET model_name = excluded.model_name, model_version = excluded.model_version,
+         embedding_version = excluded.embedding_version, sample_count = excluded.sample_count, consent_recorded_at = excluded.consent_recorded_at,
+         consent_version = excluded.consent_version, updated_at = excluded.updated_at, ciphertext = excluded.ciphertext`,
+    ),
+    voiceDelete: db.prepare("DELETE FROM voice_profiles WHERE owner_id = ?"),
     insertSegment: db.prepare(
       `INSERT INTO segments (transcription_id, id, seq, speaker_id, start_ms, end_ms, text,
                             needs_review, provider_speaker, confidence, speaker_confidence)
@@ -154,7 +191,7 @@ export function openStore(dbPath) {
       `SELECT id, created_at, duration_seconds, review_status FROM transcriptions
        WHERE owner_id = ? ORDER BY created_at DESC, id DESC LIMIT 200`,
     ),
-    speakers: db.prepare("SELECT id, label, role FROM speakers WHERE transcription_id = ? ORDER BY rowid"),
+    speakers: db.prepare("SELECT id, label, role, identification_status, suggested_role FROM speakers WHERE transcription_id = ? ORDER BY rowid"),
     segments: db.prepare(
       "SELECT id, start_ms, end_ms, text, speaker_id, needs_review FROM segments WHERE transcription_id = ? ORDER BY seq",
     ),
@@ -198,7 +235,14 @@ export function openStore(dbPath) {
       diarizationStatus: row.diarization_result ?? { ok: "completed", failed: "failed", unavailable: "failed" }[row.diarization_status],
       diarization: { status: row.diarization_status, speakerCount: row.speaker_count },
       warnings: JSON.parse(row.warnings ?? "[]"),
-      speakers: q.speakers.all(row.id).map(({ id: speakerId, label, role }) => ({ id: speakerId, label, role })),
+      // Which analysis produced the speaker labels, and whether the doctor's enrolled voice was identified.
+      speakerSource: row.speaker_source ?? (row.engine === "deepgram" ? "deepgram" : "local"),
+      voiceIdentificationStatus: row.voice_status ?? "not_enrolled",
+      speakers: q.speakers.all(row.id).map((sp) => ({
+        id: sp.id, label: sp.label, role: sp.role, // role = what the DOCTOR confirmed
+        identificationStatus: sp.identification_status ?? "unavailable", // matched | unknown | uncertain | unavailable (model output)
+        suggestedRole: sp.suggested_role ?? null, // a model suggestion, never a confirmed assignment
+      })),
       segments: q.segments.all(row.id).map((segment) => ({
         id: segment.id,
         startMs: segment.start_ms,
@@ -215,14 +259,14 @@ export function openStore(dbPath) {
   /** Insert a transcription with its speakers and segments. Call inside a transaction. Returns its id. */
   function insertTranscription(
     ownerId,
-    { durationSeconds, diarizationStatus, diarizationResult = null, speakers, segments, engine = "local", providerMeta = null, warnings = [] },
+    { durationSeconds, diarizationStatus, diarizationResult = null, speakers, segments, engine = "local", providerMeta = null, warnings = [], speakerSource = null, voiceStatus = null },
   ) {
     const id = `tr_${randomUUID()}`;
     q.insertTranscription.run(
       id, ownerId, new Date().toISOString(), durationSeconds ?? null, joinText(segments), diarizationStatus, speakers.length, engine,
-      diarizationResult, providerMeta ? JSON.stringify(providerMeta) : null, JSON.stringify(warnings),
+      diarizationResult, providerMeta ? JSON.stringify(providerMeta) : null, JSON.stringify(warnings), speakerSource, voiceStatus,
     );
-    for (const speaker of speakers) q.insertSpeaker.run(id, speaker.id, speaker.label, speaker.role);
+    for (const speaker of speakers) q.insertSpeaker.run(id, speaker.id, speaker.label, speaker.role, speaker.identificationStatus ?? null, speaker.suggestedRole ?? null);
     segments.forEach((segment, index) =>
       q.insertSegment.run(
         id, segment.id, index, segment.speakerId, segment.startMs, segment.endMs, segment.text,
@@ -248,6 +292,27 @@ export function openStore(dbPath) {
       load(ownerId, id); // ownership check
       return JSON.parse(q.owned.get(String(id), ownerId).provider_meta ?? "null");
     },
+
+    // ---- doctor voice profiles (biometric; every call is scoped to the verified owner) -------------
+    /** Safe metadata only. The encrypted embeddings are returned separately and never leave the server. */
+    voiceProfileMeta(ownerId) {
+      const row = q.voiceGet.get(ownerId);
+      return row && {
+        enrolledAt: row.created_at, updatedAt: row.updated_at, sampleCount: row.sample_count, modelName: row.model_name,
+        modelVersion: row.model_version, embeddingVersion: row.embedding_version, consentRecordedAt: row.consent_recorded_at, consentVersion: row.consent_version,
+      };
+    },
+    voiceProfileCiphertext: (ownerId) => {
+      const blob = q.voiceGet.get(ownerId)?.ciphertext;
+      return blob ? Buffer.from(blob) : null; // node:sqlite returns a Uint8Array
+    },
+    /** Create or REPLACE the caller's profile atomically (one profile per doctor). */
+    saveVoiceProfile(ownerId, { modelName, modelVersion, embeddingVersion, sampleCount, consentVersion, ciphertext }) {
+      const now = new Date().toISOString();
+      const existing = q.voiceGet.get(ownerId);
+      q.voicePut.run(ownerId, modelName, modelVersion, embeddingVersion, sampleCount, now, consentVersion, existing?.created_at ?? now, now, ciphertext);
+    },
+    deleteVoiceProfile: (ownerId) => q.voiceDelete.run(ownerId).changes > 0,
 
     // ---- jobs ------------------------------------------------------------------------------
     createJob(ownerId, { audioPath, audioBytes, expectedSpeakers = null, expiresAt }) {

@@ -35,3 +35,8 @@ export const unauthenticated = (message = "Sign in to continue.") => new AppErro
 export const notFound = (message = "Not found.") => new AppError("NOT_FOUND", 404, message);
 
 export const invalidRequest = (message = "The request is not valid.") => new AppError("INVALID_REQUEST", 400, message);
+
+/** Enrollment refused: recoverable, and says which sample has which problem (never anything biometric). */
+export const enrollmentRejected = (problems) =>
+  new AppError("ENROLLMENT_REJECTED", 422, "Some voice samples cannot be used. Fix them and try again.", { extra: { problems } });
+export const consentRequired = (message = "Explicit voice-enrollment consent is required.") => new AppError("CONSENT_REQUIRED", 400, message);

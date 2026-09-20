@@ -73,3 +73,15 @@ export async function prepareRecording(inputPath, workDir, config, { signal, tim
 
 /** A private working directory for one job attempt. */
 export const makeWorkDir = (config) => mkdtemp(path.join(config.tmpDir, "rec-"));
+
+/** A 16 kHz mono PCM WAV copy of a prepared recording, read region by region by the voice module (never loaded whole). */
+export async function toWav(inputPath, outputPath, config, { signal, timeoutMs = 20 * 60_000 } = {}) {
+  try {
+    await run(config.ffmpegBin, ["-nostdin", "-hide_banner", "-loglevel", "error", "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", outputPath], { timeoutMs, signal });
+  } catch (error) {
+    if (error.aborted) throw requestCancelled();
+    throw new RecordingError("INTERNAL", 500, "Audio processing failed.");
+  }
+  return outputPath;
+}
+
