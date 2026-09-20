@@ -37,7 +37,8 @@ export function TranscriptViewerPage() {
     isSaving,
     updateSpeakerRole,
     updateSegment,
-    markReviewed,
+    acknowledgeSegment,
+    markAllReviewed,
   } = useTranscriptionEditor(id!);
 
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
@@ -62,6 +63,13 @@ export function TranscriptViewerPage() {
   useEffect(() => () => {
     if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
   }, []);
+
+  /** Segments still carrying the model's advisory needsReview flag. Marking the
+   * transcript reviewed does not clear these on its own — each is its own item. */
+  const flaggedCount = useMemo(
+    () => transcription?.segments.filter((s) => s.needsReview).length ?? 0,
+    [transcription?.segments],
+  );
 
   const speakerIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -139,14 +147,15 @@ export function TranscriptViewerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {transcription.reviewStatus !== "reviewed" && (
-            <Button variant="outline" onClick={markReviewed} disabled={isSaving("review")}>
+          {(transcription.reviewStatus !== "reviewed" || flaggedCount > 0) && (
+            <Button variant="outline" onClick={markAllReviewed} disabled={isSaving("review")}>
               {isSaving("review") ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <Check className="size-4" />
               )}
-              Mark as reviewed
+              Mark all as reviewed
+              {flaggedCount > 0 && ` (${flaggedCount})`}
             </Button>
           )}
           <Button variant="outline" onClick={handleExport}>
@@ -241,6 +250,7 @@ export function TranscriptViewerPage() {
                     isSaving={isSaving}
                     onSave={updateSegment}
                     onDirtyChange={handleDirtyChange}
+                    onAcknowledge={acknowledgeSegment}
                     highlighted={highlightedSegmentId === segment.id}
                   />
                 ))}

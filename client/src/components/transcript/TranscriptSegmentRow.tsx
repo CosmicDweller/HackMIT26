@@ -14,6 +14,8 @@ interface TranscriptSegmentRowProps {
   isSaving: (key: string) => boolean;
   onSave: (segmentId: string, patch: { text: string; speakerId: string | null }) => void;
   onDirtyChange?: (segmentId: string, dirty: boolean) => void;
+  /** Clears this segment's advisory needsReview flag without changing its text. */
+  onAcknowledge?: (segmentId: string) => void;
   /** True briefly after a SOAP claim citing this segment is clicked. */
   highlighted?: boolean;
 }
@@ -30,6 +32,7 @@ export function TranscriptSegmentRow({
   isSaving,
   onSave,
   onDirtyChange,
+  onAcknowledge,
   highlighted,
 }: TranscriptSegmentRowProps) {
   const [draftText, setDraftText] = useState(segment.text);
@@ -105,6 +108,17 @@ export function TranscriptSegmentRow({
           <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
             <AlertTriangle className="size-3" />
             Review
+            {onAcknowledge && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onAcknowledge(segment.id)}
+                className="ml-1 rounded px-1 underline underline-offset-2 disabled:opacity-50"
+                title="Mark this segment as reviewed, leaving its text unchanged"
+              >
+                Mark reviewed
+              </button>
+            )}
           </span>
         )}
 

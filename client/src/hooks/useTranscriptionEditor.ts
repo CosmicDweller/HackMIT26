@@ -51,10 +51,38 @@ export function useTranscriptionEditor(id: string) {
     [id, withSaving],
   );
 
-  const markReviewed = useCallback(
-    () => withSaving("review", () => transcriptions.review(id)),
-    [id, withSaving],
+  /** Clears one segment's advisory needsReview flag. Re-saving the segment unchanged is
+   * how the backend records "a human looked at this" (db/store.js clears needs_review on
+   * any segment write), so this is the same path an edit takes — minus the edit. */
+  const acknowledgeSegment = useCallback(
+    (segmentId: string) => {
+      const segment = transcription?.segments.find((s) => s.id === segmentId);
+      if (!segment) return Promise.resolve();
+      return withSaving(`segment:${segmentId}`, () =>
+        transcriptions.updateSegment(id, segmentId, {
+          text: segment.text,
+          speakerId: segment.speakerId,
+        }),
+      );
+    },
+    [id, transcription, withSaving],
   );
+
+  /** Clears every outstanding segment flag, then marks the transcript reviewed. Order
+   * matters: the backend resets reviewStatus to needs_review on each segment write, so
+   * the review call has to come last or it would be immediately undone. */
+  const markAllReviewed = useCallback(async () => {
+    const flagged = transcription?.segments.filter((s) => s.needsReview) ?? [];
+    await withSaving("review", async () => {
+      for (const segment of flagged) {
+        await transcriptions.updateSegment(id, segment.id, {
+          text: segment.text,
+          speakerId: segment.speakerId,
+        });
+      }
+      return transcriptions.review(id);
+    });
+  }, [id, transcription, withSaving]);
 
   const isSaving = useCallback((key: string) => savingIds.has(key), [savingIds]);
 
@@ -65,7 +93,8 @@ export function useTranscriptionEditor(id: string) {
     isSaving,
     updateSpeakerRole,
     updateSegment,
-    markReviewed,
+    acknowledgeSegment,
+    markAllReviewed,
     reload: load,
   };
 }
