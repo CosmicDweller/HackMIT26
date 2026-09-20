@@ -67,7 +67,7 @@ note already `processing` or `draft_ready`. `POST` exists for recovery when it d
       "message": "Nothing was documented for the assessment section in this consultation.",
       "blocking": false, "resolved": false, "acknowledgedAt": null, "source": "validator" }
   ],
-  "provider": "gemini", "model": "gemini-2.5-flash",
+  "provider": "gemini", "model": "gemini-3.6-flash",
   "createdAt": "…", "updatedAt": "…", "approvedAt": null, "approvedBy": null
 }
 ```
