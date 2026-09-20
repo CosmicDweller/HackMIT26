@@ -108,11 +108,16 @@ export function recoverOrCreateNote(transcriptionId: string, ownerId: string): S
     }
     return existing;
   }
+  // The transcript is only visible here when transcriptions are ALSO mocked. With
+  // VITE_USE_MOCK_TRANSCRIPTIONS=false (real transcripts) this store is empty, so a
+  // missing record means "can't check", not "not yours" — treating it as not-found made
+  // the SOAP editor fail on every real transcript. Ownership is still enforced: the note
+  // is created for the verified caller and every later read checks note.ownerId.
   const transcription = transcriptionsStore.get(transcriptionId);
-  if (!transcription || transcription.ownerId !== ownerId) {
+  if (transcription && transcription.ownerId !== ownerId) {
     throw new TranscribeApiError({ error: "Transcript not found.", code: "NOT_FOUND" });
   }
-  const note = newNote(transcriptionId, ownerId, getPreferenceFor(ownerId), transcription.revision ?? 1);
+  const note = newNote(transcriptionId, ownerId, getPreferenceFor(ownerId), transcription?.revision ?? 1);
   notes.set(transcriptionId, note);
   runGeneration(note);
   return note;
