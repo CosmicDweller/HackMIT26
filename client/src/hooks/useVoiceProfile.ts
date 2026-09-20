@@ -26,7 +26,12 @@ export function useVoiceProfile() {
 
   const enroll = useCallback(async (samples: Blob[], consentVersion: string) => {
     const updated = await voiceProfileApi.enroll(samples, consentVersion);
-    setProfile(updated);
+    // The enroll response carries only the profile's own fields — `consent` and
+    // `requiredSamples` come from GET and are absent here (verified against the real
+    // backend). Merge so those stay populated; replacing outright would leave them
+    // undefined despite the type saying otherwise, crashing anything reading
+    // profile.consent.text after an enrollment.
+    setProfile((prev) => (prev ? { ...prev, ...updated } : updated));
     return updated;
   }, []);
 
