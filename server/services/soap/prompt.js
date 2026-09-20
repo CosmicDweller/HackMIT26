@@ -89,7 +89,7 @@ export function noteSchema() {
             section: { type: Type.STRING, enum: SECTIONS },
             text: { type: Type.STRING, description: "The statement EXACTLY as it appears in the section text, so it can be located there." },
             sourceLines: { type: Type.ARRAY, items: { type: Type.INTEGER }, description: "The transcript lines supporting this statement." },
-            sourceFactIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Ids of clinician-entered facts supporting it, when any." },
+            sourceFactIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "ONLY ids of CLINICIAN-ENTERED context, which all begin with 'manual_'. Leave this empty otherwise. Never put a 'fact_' id here: the extracted facts are not sources, their transcript lines are." },
             needsReview: { type: Type.BOOLEAN, description: "True when support is partial, the speaker was uncertain, or the wording had to be interpreted." },
           },
           required: ["section", "text", "sourceLines", "sourceFactIds", "needsReview"],
@@ -174,12 +174,14 @@ SECTIONS:
 STYLE (${template.name}): ${template.style}
 
 For every clinical statement you write, return a claim whose \`text\` is that statement EXACTLY as it appears in your section text,
-so the application can highlight it. Cite the supporting line numbers.`;
+so the application can highlight it. Cite the supporting TRANSCRIPT LINE NUMBERS in \`sourceLines\` (the numbers in square brackets).
+The extracted facts below are a working list, not sources: cite the transcript lines they point to, never a \`fact_\` id. Leave
+\`sourceFactIds\` empty unless the statement rests on clinician-entered context, whose ids all begin with \`manual_\`.`;
 
   const user = `${uncertainty}TRANSCRIPT (numbered lines):
 ${transcript}
 
-EXTRACTED FACTS (from stage 1, each with its source lines):
+EXTRACTED FACTS (a working list from stage 1; cite the TRANSCRIPT LINES they name, not these fact ids):
 ${facts}
 ${manualFacts}
 Write the SOAP note. Use only the facts and transcript above.`;

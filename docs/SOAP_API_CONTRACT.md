@@ -138,9 +138,11 @@ checked mechanically becomes a review flag. Physician review remains mandatory.
 **Verified with scripted providers (no network):** the whole workflow above — 34 API tests and 45 validator tests, including ownership
 across accounts, concurrency, optimistic concurrency, approval gating, locking, staleness, export formats and restart persistence.
 
-**Verified with the real Gemini API:** `server/tests/real-soap.test.js` runs the corrected headache consultation through the live model
-and asserts the documented facts appear, the forbidden fabrications do not, claims cite real segments, and missing sections stay empty.
-See `docs/SOAP_EVALUATION.md` for the measured results.
+**Verified with the real Gemini API (2026-09-20): 13 of 13 pass.** `server/tests/real-soap.test.js` runs the corrected headache
+consultation through the live model: all 16 documented facts appear, none of the forbidden fabrications do, 100% of claims cite a real
+segment, empty sections stay empty, and the full generate → edit → approve → export path produces a real PDF. Note: **`gemini-2.5-flash`
+is retired for new API keys**; the default is now `gemini-3.6-flash` (Google's named replacement, verified). Free-tier quota is 20
+requests per model per day. See `docs/SOAP_EVALUATION.md`.
 
 **Not verified:** real patient data (prohibited), notes longer than one consultation's transcript in a single window at real scale,
 and long-run free-tier quota behaviour.

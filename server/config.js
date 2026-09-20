@@ -113,7 +113,9 @@ export function loadConfig(env = process.env) {
     // SOAP notes (Google Gemini). Only the backend talks to Gemini; the key never reaches the browser and is never logged.
     soapEnabled: env.SOAP_ENABLED !== "false",
     soapProvider: env.SOAP_PROVIDER ?? "gemini",
-    soapModel: env.SOAP_MODEL ?? "gemini-2.5-flash",
+    // gemini-2.5-flash (the original choice) was retired for new API keys in 2026; Google's own migration notice names
+    // gemini-3.6-flash as its replacement, and it was verified here with structured output. Override with SOAP_MODEL.
+    soapModel: env.SOAP_MODEL ?? "gemini-3.6-flash",
     geminiApiKey: env.GEMINI_API_KEY ?? "",
     soapDefaultTemplate: env.SOAP_DEFAULT_TEMPLATE ?? "primary-care-standard",
     // Drafting starts by itself once a transcript is stored. Set false to require an explicit POST .../soap.
@@ -121,6 +123,8 @@ export function loadConfig(env = process.env) {
     soapMaxConcurrent: intFromEnv(env, "SOAP_MAX_CONCURRENT", 1), // free tier: one request at a time
     soapMaxRetries: intFromEnv(env, "SOAP_MAX_RETRIES", 2), // only for retryable classes (rate limit, timeout, 5xx)
     soapRetryBaseMs: intFromEnv(env, "SOAP_RETRY_BASE_MS", 2000),
+    // A 429 on the free tier means "wait for the next minute", so the wait is long and grows; the provider's own retryDelay wins.
+    soapRateLimitWaitMs: intFromEnv(env, "SOAP_RATE_LIMIT_WAIT_MS", 20_000),
     soapTimeoutMs: intFromEnv(env, "SOAP_TIMEOUT_MS", 90_000),
     soapTemperature: Number.parseFloat(env.SOAP_TEMPERATURE ?? "") || 0.1, // documentation, not prose
     soapMaxOutputTokens: intFromEnv(env, "SOAP_MAX_OUTPUT_TOKENS", 8192),

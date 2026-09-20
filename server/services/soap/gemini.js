@@ -9,14 +9,26 @@ import { GoogleGenAI } from "@google/genai";
 // reaches the browser.
 
 export class SoapProviderError extends Error {
-  constructor(code, { status = null, retryable = false, detail = "" } = {}) {
+  constructor(code, { status = null, retryable = false, detail = "", retryAfterMs = null } = {}) {
     super(code);
     this.name = "SoapProviderError";
     this.code = code; // PROVIDER_NOT_CONFIGURED | PROVIDER_AUTH_FAILED | PROVIDER_RATE_LIMITED | PROVIDER_QUOTA_EXCEEDED |
     this.status = status; // PROVIDER_TIMEOUT | PROVIDER_UNAVAILABLE | PROVIDER_MODEL_UNAVAILABLE | PROVIDER_BAD_OUTPUT | PROVIDER_FAILED
     this.retryable = retryable;
     this.detail = detail; // a short class of failure, never prompt or clinical content
+    this.retryAfterMs = retryAfterMs; // how long the provider itself asked us to wait, when it said
   }
+}
+
+/**
+ * How long Google asked us to wait, in milliseconds, or null. A 429 carries a RetryInfo with a `retryDelay` like "27s"; honouring it
+ * matters on the free tier, where the limit is per MINUTE and an exponential backoff of a few seconds simply fails three times.
+ */
+function retryDelayFrom(error) {
+  const text = typeof error?.message === "string" ? error.message : JSON.stringify(error ?? "");
+  const match = text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/) ?? text.match(/retry after (\d+(?:\.\d+)?)\s*s/i);
+  if (match) return Math.min(120_000, Math.ceil(Number(match[1]) * 1000) + 500);
+  return null;
 }
 
 /** Classify a provider failure from its status and message. The message is never stored or logged verbatim. */
@@ -31,10 +43,12 @@ export function classify(error) {
   }
   if (status === 429 || text.includes("rate limit") || text.includes("too many requests")) {
     // Free tier: a per-minute rate limit is worth retrying; an exhausted daily quota is not.
-    const daily = text.includes("quota") && (text.includes("per day") || text.includes("daily") || text.includes("exceeded your current quota"));
-    return daily
-      ? new SoapProviderError("PROVIDER_QUOTA_EXCEEDED", { status, retryable: false })
-      : new SoapProviderError("PROVIDER_RATE_LIMITED", { status, retryable: true });
+    // A hard quota (the free tier's daily request allowance) must NOT be retried: waiting minutes changes nothing and hides the
+    // real cause. Only a per-minute rate limit is worth waiting out.
+    const daily = text.includes("per day") || text.includes("daily limit") || text.includes("requests per day")
+      || text.includes("free_tier_requests") || text.includes("exceeded your current quota");
+    if (daily) return new SoapProviderError("PROVIDER_QUOTA_EXCEEDED", { status, retryable: false });
+    return new SoapProviderError("PROVIDER_RATE_LIMITED", { status, retryable: true, retryAfterMs: retryDelayFrom(error) });
   }
   if (status === 404 || text.includes("not found") || text.includes("is not supported") || text.includes("does not exist")) {
     return new SoapProviderError("PROVIDER_MODEL_UNAVAILABLE", { status, retryable: false });
@@ -121,7 +135,11 @@ export function createSoapProvider(config, { logger = console, client = null } =
           const canRetry = classified.retryable && attempt < config.soapMaxRetries;
           logger.error(`soap ${stage}: ${classified.code}${classified.detail ? ` (${classified.detail})` : ""}${canRetry ? ", retrying" : ""}`);
           if (!canRetry) throw classified;
-          await sleep(config.soapRetryBaseMs * 2 ** attempt, signal);
+          // A rate limit is a per-minute window, not congestion: wait what the provider asked for, or a sensible floor.
+          const wait = classified.retryAfterMs
+            ?? (classified.code === "PROVIDER_RATE_LIMITED" ? config.soapRateLimitWaitMs * (attempt + 1) : config.soapRetryBaseMs * 2 ** attempt);
+          logger.error(`soap ${stage}: waiting ${Math.round(wait / 1000)} s before retry ${attempt + 1}/${config.soapMaxRetries}`);
+          await sleep(wait, signal);
         } finally {
           clearTimeout(timer);
         }

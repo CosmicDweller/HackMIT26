@@ -138,6 +138,26 @@ describe("numbers and medications must come from the transcript", () => {
     assert.ok(result.blocking > 0);
   });
 
+  test("a spelled-out number in the transcript supports its digit form in the note", () => {
+    // the transcript says "three days"; a concise note writes "x3 days". That is shorthand, not invention.
+    const note = noteWith("subjective", "Headache x3 days, mostly right-sided.", [
+      { section: "subjective", text: "Headache x3 days, mostly right-sided.", sourceLines: [2, 4], sourceFactIds: [], needsReview: false },
+    ]);
+    const result = validateNote(note, context());
+    assert.equal(result.blocking, 0, messages(result));
+  });
+
+  test("a legitimate paraphrased denial passes, and a denial of something never discussed is blocked", () => {
+    // "I didn't vomit" supports "denies vomiting"; nobody mentioned phonophobia at all.
+    const fine = validateNote(noteWith("subjective", "Patient denies vomiting and denies vision changes.", [
+      { section: "subjective", text: "Patient denies vomiting and denies vision changes.", sourceLines: [8], sourceFactIds: [], needsReview: false },
+    ]), context());
+    assert.equal(fine.blocking, 0, messages(fine));
+    const invented = validateNote(noteWith("subjective", "Patient denies phonophobia.", []), context());
+    assert.ok(invented.blocking > 0);
+    assert.match(messages(invented), /never mentioned in this consultation/);
+  });
+
   test("the real doses and vitals pass", () => {
     const result = validateNote(goodNote(), context());
     assert.equal(flagsOf(result, "unclear_medication").length, 0, messages(result));

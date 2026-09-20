@@ -17,7 +17,6 @@ const FABRICATION_PATTERNS = [
   { pattern: /\bsensation (is |was )?(intact|normal)\b|\bsensory exam\b/i, label: "sensory finding" },
   { pattern: /\bkernig\b|\bbrudzinski\b|\bnuchal rigidity\b|\bmeningeal sign/i, label: "meningeal sign" },
   { pattern: /\bheent\b|\bfundoscop|\bpapilledema\b|\btympanic\b/i, label: "HEENT finding" },
-  { pattern: /\bdenies\b|\bdenied\b|\bno reported\b/i, label: "denial" },
   { pattern: /\bicd-?\s?10\b|\b[A-TV-Z][0-9][0-9AB](?:\.[0-9A-Z]{1,4})?\s*(?:code)?\b(?=.*code)/i, label: "diagnostic code" },
   { pattern: /\bfollow[- ]?up in\b|\breturn in\b|\brecheck in\b/i, label: "follow-up interval" },
   { pattern: /\bheadache diary\b|\bsymptom diary\b/i, label: "diary instruction" },
@@ -30,9 +29,22 @@ const NUMBER = /\d+(?:\.\d+)?/g;
 const norm = (text) => String(text ?? "").toLowerCase().replace(/[‘’]/g, "'").replace(/[^a-z0-9./'%-]+/g, " ").replace(/\s+/g, " ").trim();
 const squash = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
 
-/** Numbers that are part of clinical data, ignoring pure list numbering. Returns a set of strings. */
+const NUMBER_WORDS = {
+  zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10",
+  eleven: "11", twelve: "12", thirteen: "13", fourteen: "14", fifteen: "15", sixteen: "16", seventeen: "17", eighteen: "18",
+  nineteen: "19", twenty: "20", thirty: "30", forty: "40", fifty: "50", sixty: "60", seventy: "70", eighty: "80", ninety: "90", hundred: "100",
+};
+
+/**
+ * The numbers a text supports, as strings. Speech spells numbers out ("three days", "122 over 78") while a note writes digits
+ * ("x3 days", "122/78"), so a spelled-out number counts as its digit form. Without this, correct shorthand is flagged as invented.
+ */
 function numbersIn(text) {
-  return new Set(String(text ?? "").match(NUMBER) ?? []);
+  const found = new Set(String(text ?? "").match(NUMBER) ?? []);
+  for (const word of String(text ?? "").toLowerCase().match(/[a-z]+/g) ?? []) {
+    if (NUMBER_WORDS[word]) found.add(NUMBER_WORDS[word]);
+  }
+  return found;
 }
 
 // Distinctive pharmaceutical stems only. Loose suffixes like "-an" or "-ol" match ordinary words ("clinician", "protocol") and would
@@ -113,7 +125,9 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
     const sourceSegmentIds = Array.isArray(raw.sourceSegmentIds) && !Array.isArray(raw.sourceLines)
       ? raw.sourceSegmentIds.filter((segmentId) => segmentText.has(segmentId))
       : [...new Set(resolved.map((line) => line.segmentId))].filter((segmentId) => segmentText.has(segmentId));
-    const rawFactIds = Array.isArray(raw.sourceFactIds) ? raw.sourceFactIds : [];
+    // `fact_N` ids are stage 1's own working ids, not evidence. Models sometimes echo them here; that is a mislabel, not a
+    // fabricated source (the claim's transcript lines are what actually support it), so they are dropped rather than flagged.
+    const rawFactIds = (Array.isArray(raw.sourceFactIds) ? raw.sourceFactIds : []).filter((factId) => !/^fact_\d+$/.test(String(factId)));
     const sourceFactIds = rawFactIds.filter((factId) => factById.has(factId));
     const invalidFactIds = rawFactIds.filter((factId) => !factById.has(factId));
 
@@ -196,15 +210,23 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
     }
   }
 
-  // 7. Negation flips: the transcript reports a symptom, the note denies it.
+  // 7. Denials. Documenting a denial is a clinical assertion, so each one must hold up in one of three ways:
+  //      - the transcript denies that thing too ("I didn't vomit" -> "denies vomiting")            : correct, allowed
+  //      - the transcript MENTIONS it without denying it (reported sound sensitivity)              : a flipped negation, blocked
+  //      - the transcript never mentions it at all ("denies phonophobia", never discussed)         : unsupported, blocked
+  //    Matching on a stem, because the note and the speech rarely use the same word form.
   for (const section of SECTIONS) {
     for (const match of String(sections[section] ?? "").matchAll(/\b(?:denies|denied|no)\s+([a-z]{4,}(?:\s+[a-z]{4,})?)/gi)) {
       const subject = norm(match[1]).split(" ")[0];
       if (!subject || subject.length < 4) continue;
-      const presentInSource = allTranscriptText.includes(subject.slice(0, 5));
-      if (presentInSource && !deniedInTranscript(subject, allTranscriptText)) {
+      const mentioned = allTranscriptText.includes(subject.slice(0, 5));
+      if (!mentioned) {
+        flags.push(flag("unsupported_claim", "warning", section,
+          `The ${section} section records "${squash(match[0])}", but ${subject} is never mentioned in this consultation. A denial can only be documented when it was actually stated.`));
+        blocking++;
+      } else if (!deniedInTranscript(subject, allTranscriptText)) {
         flags.push(flag("conflicting_facts", "warning", section,
-          `The ${section} section records "${squash(match[0])}", but the transcript mentions ${subject.split(" ")[0]} without denying it. Check this before approving.`));
+          `The ${section} section records "${squash(match[0])}", but the transcript mentions ${subject} without denying it. Check this before approving.`));
         blocking++;
       }
     }
