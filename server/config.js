@@ -128,6 +128,9 @@ export function loadConfig(env = process.env) {
     soapTimeoutMs: intFromEnv(env, "SOAP_TIMEOUT_MS", 90_000),
     soapTemperature: Number.parseFloat(env.SOAP_TEMPERATURE ?? "") || 0.1, // documentation, not prose
     soapMaxOutputTokens: intFromEnv(env, "SOAP_MAX_OUTPUT_TOKENS", 8192),
+    // A note still "processing" after this, with nothing working on it, is assumed to have lost its worker (a crash or restart) and
+    // is marked failed so it can be retried. Must exceed the worst real generation: timeout x (retries + 1) plus rate-limit waits.
+    soapStuckAfterMs: intFromEnv(env, "SOAP_STUCK_AFTER_MS", 10 * 60_000),
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),
   };
 }

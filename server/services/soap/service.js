@@ -15,17 +15,32 @@ import { validateNote } from "./validate.js";
 //  - A failure never damages the transcript: the note records the failure and the transcript is untouched.
 
 const MAX_SECTION_LENGTH = 20_000;
-const STUCK_AFTER_MS = 10 * 60_000;
 
 export function createSoapService({ config, store, generator, logger = console }) {
   const running = new Map(); // transcriptionId -> promise, so one process never generates the same note twice at once
 
   const enabled = () => config.soapEnabled;
 
-  /** The note plus the freshness of its sources. */
+  const stuckAfterMs = () => config.soapStuckAfterMs;
+
+  /**
+   * The note plus the freshness of its sources.
+   *
+   * A note is also rescued here if it has been `processing` for longer than any real generation could take and nothing in THIS
+   * process is working on it: that means the worker died (a crash, a restart, a killed process) and nobody will ever finish it.
+   * Checking on read rather than on a timer means a note cannot stay `processing` forever even if the server never restarts, which
+   * is what leaves a client polling a spinner that never resolves.
+   */
   function get(ownerId, transcriptionId) {
-    const note = store.getSoapNote(ownerId, transcriptionId);
-    return note ? withStaleness(note, store.get(ownerId, transcriptionId)) : null;
+    let note = store.getSoapNote(ownerId, transcriptionId);
+    if (!note) return null;
+    if (note.status === "processing" && !running.has(transcriptionId) && Date.now() - Date.parse(note.updatedAt) > stuckAfterMs()) {
+      logger.error(`soap: a note was left processing with no worker; marking it failed so it can be retried`);
+      try {
+        note = store.updateSoapNote(ownerId, transcriptionId, { status: "failed", generation_stage: null, error_code: "INTERRUPTED" });
+      } catch { /* someone else finished or removed it in the meantime */ }
+    }
+    return withStaleness(note, store.get(ownerId, transcriptionId));
   }
 
   /**
@@ -224,7 +239,7 @@ export function createSoapService({ config, store, generator, logger = console }
 
   /** At startup: notes left `processing` by a crash are marked failed so they can be retried, never left spinning forever. */
   function recoverStuck() {
-    const cutoff = new Date(Date.now() - STUCK_AFTER_MS).toISOString();
+    const cutoff = new Date(Date.now() - stuckAfterMs()).toISOString();
     let recovered = 0;
     for (const row of store.stuckSoapNotes(cutoff)) {
       try {
