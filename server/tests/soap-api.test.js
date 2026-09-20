@@ -469,15 +469,47 @@ describe("persistence", () => {
     assert.equal(reloaded.claims.length, note.claims.length);
   });
 
-  test("a note interrupted by a restart is recovered as failed, not left processing forever", async () => {
-    const s = await setup();
+  test("a note whose worker died is rescued on read, so a client can never poll a spinner forever", async () => {
+    // This is the failure that showed up as a permanent "Extracting clinical statements..." in the UI: the note was claimed, the
+    // process that was generating it went away, and nothing ever moved it out of `processing`.
+    const s = await setup({ config: { soapStuckAfterMs: 50 } });
     s.store.claimSoapNote("doctor-a", s.id, { templateId: "primary-care-standard", sourceTranscriptRevision: 1 });
-    // pretend it was claimed long ago and the process died
-    s.store.updateSoapNote("doctor-a", s.id, { generation_stage: "drafting" });
-    const db = s.store;
-    assert.equal(db.getSoapNote("doctor-a", s.id).status, "processing");
-    // recovery only touches notes older than the cutoff
+    s.store.updateSoapNote("doctor-a", s.id, { generation_stage: "extracting" });
+    assert.equal(s.soap.get("doctor-a", s.id).status, "processing", "still processing while it is fresh");
+
+    await new Promise((resolve) => setTimeout(resolve, 80)); // older than the threshold, and nothing is working on it
+    const rescued = s.soap.get("doctor-a", s.id);
+    assert.equal(rescued.status, "failed");
+    assert.equal(rescued.errorCode, "INTERRUPTED");
+    assert.equal(rescued.generationStage, null);
+    // and the doctor can get a note out of it
+    const retried = await s.soap.retry("doctor-a", s.id, { wait: true });
+    assert.equal(retried.status, "draft_ready");
+  });
+
+  test("a generation that is genuinely still running is NOT killed by the stuck check", async () => {
+    const s = await setup({ config: { soapStuckAfterMs: 50 } });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    s.provider.generate = async ({ stage }) => {
+      if (stage === "compose") await gate;
+      return { data: stage.startsWith("extract") ? goodFacts() : goodNote(), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, ms: 1 } };
+    };
+    const work = s.soap.createIfAbsent("doctor-a", s.id, { wait: true });
+    await new Promise((resolve) => setTimeout(resolve, 120)); // well past the threshold
+    assert.equal(s.soap.get("doctor-a", s.id).status, "processing", "work in this process is left alone");
+    release();
+    await work;
+    assert.equal(s.soap.get("doctor-a", s.id).status, "draft_ready");
+  });
+
+  test("recoverStuck marks abandoned notes failed at startup, and leaves fresh ones alone", async () => {
+    const s = await setup({ config: { soapStuckAfterMs: 50 } });
+    s.store.claimSoapNote("doctor-a", s.id, { templateId: "primary-care-standard", sourceTranscriptRevision: 1 });
     assert.equal(s.soap.recoverStuck(), 0, "a fresh note is not touched");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(s.soap.recoverStuck(), 1);
+    assert.equal(s.store.getSoapNote("doctor-a", s.id).status, "failed");
   });
 
   test("deleting the transcription deletes its note", async () => {

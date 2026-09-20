@@ -37,6 +37,9 @@ export function createApp(config, overrides = {}) {
   // SOAP notes: Gemini drafts, deterministic checks validate, the doctor approves.
   const soapProvider = overrides.soapProvider ?? createSoapProvider(config);
   const soap = overrides.soap ?? createSoapService({ config, store, generator: createSoapGenerator({ config, provider: soapProvider }) });
+  // Notes interrupted by a previous crash or restart would otherwise stay "processing" forever, leaving clients polling a spinner
+  // that never resolves. Mark them failed at startup so the doctor can retry.
+  if (config.soapEnabled) soap.recoverStuck();
   app.use("/api/me/voice-profile", createVoiceProfileRouter(config, voice, authenticate));
   // Every authenticated recording goes through the persistent job system.
   const jobs = createJobManager({ config, store, pipeline, voice, embedder, pyannote, soap });
