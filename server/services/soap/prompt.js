@@ -133,7 +133,13 @@ export function numberedTranscript(transcription) {
     let who = "UNKNOWN SPEAKER";
     if (speaker) {
       const role = speaker.role;
-      who = role === "doctor" ? "CLINICIAN" : role === "patient" ? "PATIENT" : role === "other" ? `OTHER (${speaker.label})` : `UNIDENTIFIED (${speaker.label})`;
+      if (role === "doctor") who = "CLINICIAN";
+      else if (role === "patient") who = "PATIENT";
+      else if (role === "other") who = `OTHER (${speaker.label})`;
+      // Not confirmed by the doctor. A voice match is a suggestion and is labelled as one, so the model can use it for attribution
+      // while still being told it is unconfirmed: it must not silently promote the suggestion to a fact.
+      else if (speaker.suggestedRole === "doctor" && speaker.identificationStatus === "matched") who = `PROBABLY THE CLINICIAN, UNCONFIRMED (${speaker.label})`;
+      else who = `UNIDENTIFIED (${speaker.label})`;
     }
     const time = Number.isFinite(segment.startMs) ? ` @${Math.floor(segment.startMs / 1000)}s` : "";
     return `[${number}] ${who}${time}: ${segment.text}`;
@@ -187,8 +193,11 @@ export function uncertaintyNotice(transcription) {
   const unconfirmed = transcription.speakers.filter((speaker) => speaker.role === "unassigned").length;
   const flagged = transcription.segments.filter((segment) => segment.needsReview).length;
   if (unconfirmed > 0) {
-    notes.push(`${unconfirmed} of ${transcription.speakers.length} speakers have NOT been confirmed by the clinician: they are marked UNIDENTIFIED. `
-      + "Do not assume an unidentified speaker is the clinician. Statements that would only belong in Assessment or Plan if a clinician said them must NOT be attributed to the clinician; raise an uncertain_speaker flag instead.");
+    const voiceMatched = transcription.speakers.filter((speaker) => speaker.role === "unassigned" && speaker.suggestedRole === "doctor" && speaker.identificationStatus === "matched").length;
+    notes.push(`${unconfirmed} of ${transcription.speakers.length} speakers have NOT been confirmed by the clinician. `
+      + (voiceMatched > 0
+        ? "One is marked PROBABLY THE CLINICIAN, UNCONFIRMED: voice matching suggests it, but nobody has confirmed it. You may document their stated assessment and plan as the clinician's, and you MUST raise an uncertain_speaker flag saying the speaker was identified by voice matching and not confirmed. "
+        : "They are marked UNIDENTIFIED. Do not assume an unidentified speaker is the clinician. Statements that would only belong in Assessment or Plan if a clinician said them must NOT be attributed to the clinician; raise an uncertain_speaker flag instead."));
   }
   if (unlabelled > 0) notes.push(`${unlabelled} transcript lines have no speaker at all (marked UNKNOWN SPEAKER). Treat their attribution as unknown.`);
   if (flagged > 0) notes.push(`${flagged} lines are flagged as possibly misheard. Facts resting on them are uncertain.`);
