@@ -7,6 +7,8 @@ import { SpeakerMappingPanel } from "@/components/transcript/SpeakerMappingPanel
 import { segmentAnchorId, TranscriptSegmentRow } from "@/components/transcript/TranscriptSegmentRow";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAcknowledgedWarnings } from "@/hooks/useAcknowledgedWarnings";
+import { useAuth } from "@/hooks/useAuth";
 import { useTranscriptionEditor } from "@/hooks/useTranscriptionEditor";
 import { downloadTextFile, formatTranscriptForExport } from "@/lib/exportTranscript";
 import { formatDate } from "@/lib/format";
@@ -30,6 +32,7 @@ function diarizationMessage(t: Transcription): string {
 export function TranscriptViewerPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     transcription,
     loadError,
@@ -64,12 +67,32 @@ export function TranscriptViewerPage() {
     if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
   }, []);
 
-  /** Segments still carrying the model's advisory needsReview flag. Marking the
-   * transcript reviewed does not clear these on its own — each is its own item. */
-  const flaggedCount = useMemo(
-    () => transcription?.segments.filter((s) => s.needsReview).length ?? 0,
-    [transcription?.segments],
+  const { acknowledgedCodes, acknowledge, acknowledgeAll, reopen } = useAcknowledgedWarnings(
+    id!,
+    user?.id,
   );
+
+  const openWarnings = useMemo(
+    () => (transcription?.warnings ?? []).filter((w) => !acknowledgedCodes.has(w.code)),
+    [transcription?.warnings, acknowledgedCodes],
+  );
+  const acknowledgedWarnings = useMemo(
+    () => (transcription?.warnings ?? []).filter((w) => acknowledgedCodes.has(w.code)),
+    [transcription?.warnings, acknowledgedCodes],
+  );
+
+  /** Everything still awaiting the doctor: segment flags the model raised, plus
+   * transcript-level notices they haven't acknowledged. Marking the transcript reviewed
+   * does not clear either on its own — each is its own item. */
+  const flaggedCount = useMemo(
+    () => (transcription?.segments.filter((s) => s.needsReview).length ?? 0) + openWarnings.length,
+    [transcription?.segments, openWarnings],
+  );
+
+  const handleMarkAllReviewed = useCallback(async () => {
+    acknowledgeAll(openWarnings.map((w) => w.code));
+    await markAllReviewed();
+  }, [acknowledgeAll, openWarnings, markAllReviewed]);
 
   const speakerIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -148,7 +171,7 @@ export function TranscriptViewerPage() {
         </div>
         <div className="flex items-center gap-2">
           {(transcription.reviewStatus !== "reviewed" || flaggedCount > 0) && (
-            <Button variant="outline" onClick={markAllReviewed} disabled={isSaving("review")}>
+            <Button variant="outline" onClick={handleMarkAllReviewed} disabled={isSaving("review")}>
               {isSaving("review") ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -220,18 +243,37 @@ export function TranscriptViewerPage() {
               </p>
             )}
 
-            {transcription.warnings && transcription.warnings.length > 0 && (
+            {openWarnings.length > 0 && (
               <div className="space-y-1.5">
-                {transcription.warnings.map((warning, i) => (
+                {openWarnings.map((warning) => (
                   <p
-                    key={i}
+                    key={warning.code}
                     className="flex items-start gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
                   >
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                    {warning.message}
+                    <span className="flex-1">{warning.message}</span>
+                    <button
+                      type="button"
+                      onClick={() => acknowledge(warning.code)}
+                      className="shrink-0 underline underline-offset-2"
+                      title="Acknowledge this notice (collapses it on this device; the notice itself is never deleted)"
+                    >
+                      Mark reviewed
+                    </button>
                   </p>
                 ))}
               </div>
+            )}
+
+            {acknowledgedWarnings.length > 0 && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                {acknowledgedWarnings.length} acknowledged{" "}
+                {acknowledgedWarnings.length === 1 ? "notice" : "notices"}
+                <button type="button" onClick={reopen} className="underline underline-offset-2">
+                  Show again
+                </button>
+              </p>
             )}
 
             {saveError && <p className="text-sm text-destructive">{saveError}</p>}
