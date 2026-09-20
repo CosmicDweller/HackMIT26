@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+# Local secrets only — .env.example is checked in on purpose, as the reference
+# for which variables a build needs (a missing mock flag silently ships mocks).
+.env
+.env.local
+.env*.local

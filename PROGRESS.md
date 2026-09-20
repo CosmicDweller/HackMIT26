@@ -1,6 +1,29 @@
 # Progress
 
-## Current milestone — deployed for judging
+## Current milestone — the deployed link shipped in mock mode (fixed)
+`VITE_USE_MOCK_API` is read in `services/config.ts` but was never in
+`client/.env.local`, and every mock check is `!== "false"` — **unset means
+mock**. So the judges' landing page (`/`, the quick-transcribe page) rendered
+fixtures behind a `MockModeBadge`. The other four flags were set, so auth,
+transcriptions, voice and SOAP were all real; only the public
+`/api/transcribe` path was mocked.
+
+Fail-open defaults are the actual defect: forgetting a flag produces a
+plausible-looking build rather than an error. Guarded with
+`npm run build:prod` (`scripts/build-prod.sh`), which requires
+`VITE_API_BASE_URL`, sets all five flags explicitly, and then **fails the
+build** if mock fixtures are still in the bundle or the API origin is
+missing. The same values are now set as Vercel production env vars, so a
+build on Vercel no longer depends on anyone's local `.env.local`.
+
+Verified before flipping it: the real `/api/transcribe` works through the
+tunnel (whisper-cli, ffmpeg and the model are all present; a sine-tone probe
+correctly returned "No speech was detected").
+
+Deploying `dist/` as a static directory proved unreliable — two deploys hung
+at `UNKNOWN` for 10+ minutes. Deploy from `client/` and let Vercel build.
+
+## Previously — deployed for judging
 **Live: https://hackmit-scribe.vercel.app** (client on Vercel, backend
 tunnelled from this laptop).
 
