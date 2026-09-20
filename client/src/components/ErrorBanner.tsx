@@ -32,6 +32,10 @@ const CATEGORY_LABEL: Record<string, string> = {
   INTERRUPTED: "Interrupted",
   CALLBACK_TIMEOUT: "Timed out waiting for results",
   INTERNAL: "Internal error",
+  // Voice enrollment error codes (Contract v4)
+  CONSENT_REQUIRED: "Consent required",
+  ENROLLMENT_REJECTED: "Sample issue",
+  CONFIRMATION_REQUIRED: "Confirmation required",
 };
 
 interface ErrorBannerProps {

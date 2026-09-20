@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useVoiceProfile } from "@/hooks/useVoiceProfile";
+import { TranscribeApiError } from "@/services/transcribeApi";
 
 const SAMPLE_PHRASES = [
   "Hello, my name is Doctor Smith. I am testing my voice profile for the transcription system.",
@@ -17,11 +18,12 @@ type Step = "intro" | "record" | "submitting" | "success";
 
 export function VoiceProfilePage() {
   const navigate = useNavigate();
-  const { enroll } = useVoiceProfile();
+  const { profile, loading: profileLoading, enroll } = useVoiceProfile();
   const [step, setStep] = useState<Step>("intro");
   const [consented, setConsented] = useState(false);
-  const [samples, setSamples] = useState<(Blob | null)[]>([null, null, null]);
+  const [samples, setSamples] = useState<(Blob | null)[]>(SAMPLE_PHRASES.map(() => null));
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [sampleProblems, setSampleProblems] = useState<Map<number, string> | null>(null);
 
   const allRecorded = useMemo(() => samples.every((s) => s != null), [samples]);
 
@@ -30,14 +32,34 @@ export function VoiceProfilePage() {
   }
 
   async function handleSubmit() {
-    if (!allRecorded) return;
+    if (!allRecorded || !profile) return;
     setSubmitError(null);
+    setSampleProblems(null);
     setStep("submitting");
     try {
-      await enroll(samples.filter((s): s is Blob => s != null));
+      await enroll(samples.filter((s): s is Blob => s != null), profile.consent.version);
       setStep("success");
-    } catch {
-      setSubmitError("Couldn't create your voice profile. Check your connection and try again.");
+    } catch (err) {
+      if (err instanceof TranscribeApiError && err.code === "ENROLLMENT_REJECTED" && err.problems) {
+        const bySample = new Map<number, string>();
+        const general: string[] = [];
+        for (const problem of err.problems) {
+          if (problem.sample != null) bySample.set(problem.sample, problem.message);
+          else general.push(problem.message);
+        }
+        setSampleProblems(bySample);
+        // Clear the flagged samples so the doctor re-records just those, keeping good ones.
+        setSamples((prev) => prev.map((blob, i) => (bySample.has(i + 1) ? null : blob)));
+        setSubmitError(
+          general.length > 0 ? general.join(" ") : "Some samples couldn't be used — see below.",
+        );
+      } else {
+        setSubmitError(
+          err instanceof TranscribeApiError
+            ? err.message
+            : "Couldn't create your voice profile. Check your connection and try again.",
+        );
+      }
       setStep("record");
     }
   }
@@ -74,6 +96,13 @@ export function VoiceProfilePage() {
   }
 
   if (step === "intro") {
+    if (profileLoading || !profile) {
+      return (
+        <div className="flex justify-center py-16">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-lg">
         <Card>
@@ -87,14 +116,10 @@ export function VoiceProfilePage() {
           <CardContent className="space-y-4">
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
-                We'll ask you to read three short phrases aloud. A mathematical
-                representation of your voice (not the audio itself, once processed) is
-                stored so future recordings can be compared against it.
-              </p>
-              <p>
-                Voice recognition can make mistakes — it never proves who is speaking on
-                its own, and any match is something you confirm yourself before it's
-                applied to a transcript. It is not used to sign in to your account.
+                We'll ask you to read {profile.requiredSamples} short phrases aloud. Voice
+                recognition can make mistakes — it never proves who is speaking on its own,
+                and any match is something you confirm yourself before it's applied to a
+                transcript. It is not used to sign in to your account.
               </p>
               <p>
                 You can replace or delete your voice profile at any time from Account
@@ -110,10 +135,7 @@ export function VoiceProfilePage() {
                 onChange={(e) => setConsented(e.target.checked)}
                 className="mt-0.5 size-4"
               />
-              <span className="font-normal text-foreground">
-                I consent to recording my voice to create a voice profile for speech
-                identification, as described above.
-              </span>
+              <span className="font-normal text-foreground">{profile.consent.text}</span>
             </Label>
 
             <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
@@ -142,21 +164,28 @@ export function VoiceProfilePage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Record your voice samples</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Read each phrase aloud (about 10-20 seconds). These are generic phrases — not
-          your real name, and not a password.
+          Read each phrase aloud (about 10-30 seconds, up to 60s). These are generic
+          phrases — not your real name, and not a password.
         </p>
       </div>
 
       <div className="space-y-4">
         {SAMPLE_PHRASES.map((phrase, i) => (
-          <VoiceSampleRecorder
-            key={i}
-            index={i + 1}
-            phrase={phrase}
-            blob={samples[i]}
-            onRecorded={(blob) => setSample(i, blob)}
-            onClear={() => setSample(i, null)}
-          />
+          <div key={i} className="space-y-1.5">
+            <VoiceSampleRecorder
+              index={i + 1}
+              phrase={phrase}
+              blob={samples[i]}
+              onRecorded={(blob) => setSample(i, blob)}
+              onClear={() => setSample(i, null)}
+            />
+            {sampleProblems?.has(i + 1) && (
+              <p className="flex items-start gap-1.5 text-xs text-destructive">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                {sampleProblems.get(i + 1)}
+              </p>
+            )}
+          </div>
         ))}
       </div>
 

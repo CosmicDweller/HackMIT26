@@ -1,11 +1,14 @@
-import type { TranscribeError, TranscribeSuccess } from "@/types";
+import type { TranscribeError, TranscribeSuccess, VoiceEnrollmentProblem } from "@/types";
 
 export class TranscribeApiError extends Error {
   code: TranscribeError["code"];
+  /** Present only for 422 ENROLLMENT_REJECTED from POST /api/me/voice-profile/enroll. */
+  problems?: VoiceEnrollmentProblem[];
 
-  constructor(payload: TranscribeError) {
+  constructor(payload: TranscribeError & { problems?: VoiceEnrollmentProblem[] }) {
     super(payload.error);
     this.code = payload.code;
+    this.problems = payload.problems;
   }
 }
 

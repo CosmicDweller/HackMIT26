@@ -1,4 +1,5 @@
-import { Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, Loader2, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { speakerColor } from "@/lib/speakerColors";
 import { cn } from "@/lib/utils";
 import type { Speaker, SpeakerRole } from "@/types";
@@ -40,14 +41,29 @@ export function SpeakerMappingPanel({ speakers, isSaving, onChangeRole }: Speake
                 <span className={cn("size-1.5 rounded-full", color.dot)} />
                 {speaker.label}
               </span>
-              {speaker.role === "unassigned" && speaker.identificationStatus === "matched" && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              {speaker.role === "unassigned" && speaker.suggestedRole === "doctor" && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ShieldCheck className="size-3.5 text-emerald-600 dark:text-emerald-500" />
-                  Suggested: Doctor — voice match detected (unconfirmed)
+                  This looks like you
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={saving}
+                    onClick={() => onChangeRole(speaker.id, "doctor")}
+                  >
+                    <Check className="size-3" />
+                    Confirm
+                  </Button>
                 </span>
               )}
-              {speaker.role === "unassigned" && speaker.identificationStatus === "unknown" && (
-                <span className="text-xs text-muted-foreground">Needs confirmation</span>
+              {/* "unknown" needs no special message — it's a fairly confident non-match, not
+                  ambiguous. Only "uncertain" (not enough evidence either way) gets a warning. */}
+              {speaker.role === "unassigned" && speaker.identificationStatus === "uncertain" && (
+                <span className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="size-3.5" />
+                  Voice match uncertain — please check
+                </span>
               )}
               <div className="inline-flex rounded-lg border border-border bg-muted p-1">
                 {ROLE_OPTIONS.map((option) => (

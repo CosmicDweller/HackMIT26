@@ -10,14 +10,18 @@ import { formatDate } from "@/lib/format";
 function VoiceProfileSection() {
   const { profile, loading, error, remove } = useVoiceProfile();
   const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   async function handleDelete() {
     if (!window.confirm("Delete your voice profile? This disables automatic doctor voice matching for future consultations until you re-enroll.")) {
       return;
     }
     setRemoving(true);
+    setRemoveError(null);
     try {
       await remove();
+    } catch {
+      setRemoveError("Couldn't delete your voice profile. Try again.");
     } finally {
       setRemoving(false);
     }
@@ -64,6 +68,7 @@ function VoiceProfileSection() {
                 Delete Voice Profile
               </Button>
             </div>
+            {removeError && <p className="text-xs text-destructive">{removeError}</p>}
           </>
         )}
 

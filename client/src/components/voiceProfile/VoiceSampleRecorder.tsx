@@ -6,9 +6,9 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { formatClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Target 10-20s of clean speech per sample — an initial UX setting, not yet validated against
- * the backend's actual enrollment requirements (see the voice-enrollment coordination proposal). */
-const TARGET_MAX_SECONDS = 20;
+/** Matches the real backend's enrollment thresholds (server/voice/calibration.json):
+ * minVoicedSeconds 6 (we suggest 10 for margin), maxSampleSeconds 60. */
+const TARGET_MAX_SECONDS = 60;
 const TARGET_MIN_SECONDS = 10;
 
 interface VoiceSampleRecorderProps {

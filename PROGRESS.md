@@ -1,11 +1,67 @@
 # Progress
 
 ## Current milestone
-**SOAP note generation, review, and export — built client-side against a
-mock, coordination proposal posted on issue #3.** No backend support exists
-for this yet, same situation as voice enrollment: the client is ahead and
-waiting on the backend agent (and on a hosted AI provider decision, which
-is entirely backend-side).
+**Reconciled the client against the backend's real voice-enrollment merge
+(Contract v4, `main`).** The backend shipped a full local ECAPA-TDNN
+implementation while SOAP notes were in progress; merged `main` into `kv`
+and found the real contract differs from what was mocked/proposed
+(different field names, a 4-value `identificationStatus`, consent
+versioning, per-sample rejection errors). Reconciled all of it — verified
+live against the real backend, not just by reading the contract doc.
+
+## Voice enrollment — reconciled against the real backend (Contract v4)
+`git merge origin/main` brought in `d9c7bda`/`38c81a0` (backend: real local
+voice enrollment + speaker identification, merged as PR #8). Compared
+against what this branch had mocked/proposed and fixed every mismatch:
+
+- `VoiceProfile` shape corrected: real GET always returns `consent: {version,
+  text}` and `requiredSamples`; enrolled-only fields (`enrolledAt`,
+  `updatedAt`, `sampleCount`, `modelVersion`, `consentRecordedAt`) are
+  optional. No `enrolling` status is ever observable client-side (enroll is
+  one synchronous POST, not a background job) — removed the mock's fake
+  polling assumption.
+- `enroll()` now sends `consent: "true"` + `consentVersion` (echoed from the
+  GET response) — the real backend rejects enrollment without these
+  (`400 CONSENT_REQUIRED`). `remove()` now sends the required
+  `X-Confirm: delete-voice-profile` header.
+- `Speaker.identificationStatus` widened from 2 values to the real 4:
+  `matched | unknown | uncertain | unavailable`. Added `Speaker.suggestedRole`
+  (`"doctor"` only, never `"patient"`/`"other"`) and
+  `Transcription.speakerSource`. `voiceIdentificationStatus` corrected to
+  `not_enrolled | completed | unavailable` (dropped the invented `failed`).
+- New `TranscribeApiError.problems` field to surface `422
+  ENROLLMENT_REJECTED`'s per-sample `{sample, code, message}` array; the
+  enrollment wizard now shows each rejected sample's own message and clears
+  only those samples for re-recording, keeping the good ones.
+- `SpeakerMappingPanel` rebuilt per the backend's frontend-integration
+  checklist: a one-tap "This looks like you → Confirm" button for
+  `suggestedRole === "doctor"` (PATCHes the role directly), a visible
+  "please check" warning only for `uncertain`, and — per explicit
+  instruction — **no message at all for `unknown`** (a confident non-match
+  isn't ambiguous). Sample-duration guidance corrected to the real
+  thresholds (10-30s suggested, 60s hard cap, was a guessed 10-20s).
+- **Verified live against the real backend, not just read from the
+  contract doc**: ran the real server, got a real Supabase token for the
+  test account via curl, and confirmed `GET /api/me/voice-profile`'s exact
+  JSON matches the `VoiceProfile` type; confirmed `DELETE` without the
+  confirm header returns `400 CONFIRMATION_REQUIRED`, with it but no
+  profile returns `404`; confirmed `POST .../enroll` without consent
+  returns `400 CONSENT_REQUIRED` — all exactly as coded. Then loaded the
+  actual enrollment wizard against the real backend in a real signed-in
+  browser session and confirmed the consent checkbox renders the backend's
+  exact live consent text and sample count, zero console errors. (Did not
+  attempt a full successful enrollment — that needs the local ECAPA-TDNN
+  Python/model setup, `uv` + ~500 MB, not installed in this session; the
+  GET/DELETE/enroll-validation paths don't need it, so those were verified
+  for real regardless.) Mock mode re-verified afterward with the corrected
+  shapes: enroll round-trip, "This looks like you" confirm button,
+  "uncertain" badge on the minor speaker, "Unknown Speaker 2" labeling.
+
+## Previous milestone — SOAP note generation, review, and export
+Built client-side against a mock, coordination proposal posted on issue #3.
+No backend support exists for this yet, same situation voice enrollment was
+in before this reconciliation: the client is ahead and waiting on the
+backend agent (and on a hosted AI provider decision, entirely backend-side).
 
 ## SOAP notes — client built, mock-only, awaiting backend
 Proposed contract posted to issue #3: the six endpoints from the brief
@@ -264,20 +320,24 @@ With the client pointed at it for real:
 - Zero console errors at any step of the whole session.
 
 ## Remaining prioritized tasks
-1. Backend agreement on the SOAP-notes contract and the voice-enrollment
-   contract (both proposals posted on issue #3) — both features are
-   mock-only until their endpoints exist. SOAP also needs a hosted-AI
-   provider decision, which is entirely backend-side.
-2. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
+1. Voice enrollment: set up the real ECAPA-TDNN model locally
+   (`npm run setup:voice`, needs `uv` + ~500 MB, not installed this
+   session) and `VOICE_PROFILE_KEY`, then verify a full successful
+   enrollment + a real doctor-voice-match against the live backend — only
+   the GET/DELETE/consent-validation paths were verified for real so far.
+2. Backend agreement on the SOAP-notes contract (proposal posted on issue
+   #3) — still mock-only until the endpoints exist; also needs a hosted-AI
+   provider decision, entirely backend-side.
+4. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
    (tested via the local fallback through the same job endpoints so far).
-3. Automated test suite (Playwright/Vitest) for the scenarios in the brief
+5. Automated test suite (Playwright/Vitest) for the scenarios in the brief
    — deferred until now because the job-workflow contract was still
    changing; it's stable now, so this is a reasonable next step.
-4. Mobile-width layout not manually verified (browser automation here
+6. Mobile-width layout not manually verified (browser automation here
    can't reliably resize the viewport).
-5. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
+7. Deploy to Vercel (client) + decide on backend hosting (laptop + tunnel
    per backend's plan, since Vercel can't run whisper.cpp).
-6. Optional: surface `GET /api/me` somewhere (not required by any current
+8. Optional: surface `GET /api/me` somewhere (not required by any current
    screen).
 
 ## Architectural decisions
@@ -288,39 +348,47 @@ With the client pointed at it for real:
 - Auth and the transcriptions API each sit behind their own
   provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
   `VITE_USE_MOCK_TRANSCRIPTIONS`) — both now flipped to `false` locally
-  since the real backend is verified working. Voice profile and SOAP notes
-  each follow the same provider-agnostic + mock-flag pattern
-  (`VITE_USE_MOCK_VOICE_PROFILE`, `VITE_USE_MOCK_SOAP`), both currently
-  mock-only since the backend doesn't have either yet.
+  since the real backend is verified working. Voice profile now points at
+  the real, merged backend (`VITE_USE_MOCK_VOICE_PROFILE`, verified working
+  against `main` this session) — the mock stays available and shape-matched
+  for demoing without the local ECAPA-TDNN model set up. SOAP notes still
+  follow the same pattern (`VITE_USE_MOCK_SOAP`) but stay mock-only since
+  the backend doesn't have that endpoint yet.
 
 ## Known bugs and blockers
-- Voice enrollment and SOAP notes have no backend support yet — both
-  mock-only, see above. Everything else: no known bugs. Both mock flags
-  (auth/transcriptions) can stay `false` for local dev/demo as long as
-  `server/` is running with models set up. `server/.env` needs
-  `DEEPGRAM_API_KEY` for the real Deepgram engine — without it, set
-  `STT_ENGINE=local` to use the whisper.cpp fallback (what this session's
-  testing used).
+- SOAP notes have no backend support yet — mock-only, see above. Voice
+  enrollment's real backend is merged and verified for GET/DELETE/consent
+  validation, but a full enrollment hasn't been exercised for real in this
+  session (needs the local voice-model setup — see remaining tasks).
+  Everything else: no known bugs. Auth/transcriptions mock flags can stay
+  `false` for local dev/demo as long as `server/` is running with models
+  set up. `server/.env` needs `DEEPGRAM_API_KEY` for the real Deepgram
+  engine — without it, set `STT_ENGINE=local` to use the whisper.cpp
+  fallback (what this session's testing used).
 
 ## Test and deployment status
 - No automated tests on the client. Full manual pass against the real,
-  merged v3 backend today (job creation, polling, completion, warnings,
+  merged v3 backend (job creation, polling, completion, warnings,
   needsReview, resume-unfinished-job) plus earlier real-auth and v2 passes.
-  Voice enrollment and SOAP notes each verified against their mocks only
-  (SOAP: full generate → edit → save → approve → export round trip,
-  including a real StrictMode double-invoke bug caught and fixed in this
-  session) — see each feature's "Not implemented"/"Not verified" notes
-  above for what live browser automation couldn't cover (mainly native
-  browser dialogs: mic permission prompts and `window.confirm`, the latter
-  worked around by overriding it in-page for testing, same technique used
-  for the transcript delete button previously). Lint (`oxlint`) and build
-  (`tsc -b && vite build`) both pass. No deployment yet.
+  Voice enrollment verified for real against the merged v4 backend where
+  possible without the local model (GET, DELETE + confirm header, consent
+  validation — all exact-match against the live server, confirmed via both
+  curl and a real signed-in browser session) plus the reconciled mock for
+  the rest. SOAP notes verified against their mock only (full generate →
+  edit → save → approve → export round trip, including a real StrictMode
+  double-invoke bug caught and fixed in this session) — see each feature's
+  notes above for what live browser automation couldn't cover (mainly
+  native browser dialogs: mic permission prompts and `window.confirm`, the
+  latter worked around by overriding it in-page for testing, same
+  technique used for the transcript delete button previously). Lint
+  (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Wait for the backend agent's response to the SOAP-notes and voice-enrollment
-proposals on issue #3; meanwhile get a Deepgram API key to verify the real
-engine, then decide on deployment: client to Vercel, backend to a machine
-that can run whisper.cpp/Deepgram + the diarization venv (per backend's
+Set up the local voice model (`npm run setup:voice`) to verify a full real
+enrollment; wait for the backend agent's response to the SOAP-notes
+proposal on issue #3; get a Deepgram API key to verify the real engine;
+then decide on deployment: client to Vercel, backend to a machine that can
+run whisper.cpp/Deepgram + the diarization/voice venvs (per backend's
 tunnel plan).
 
 ## Backend status (lz)
@@ -332,6 +400,6 @@ tunnel plan).
   through the full stack, including **30-minute and 2-hour recordings** (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
   misattributes a sentence, and the 2-hour recording produced a spurious 3rd speaker (0.08% of speech; now flagged with a warning, not reassigned).
   Synchronous limit default raised to 2 h. **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
-- v4 (branch `lz`, not yet merged): **doctor voice enrollment and identification** (`/api/me/voice-profile`), local SpeechBrain ECAPA-TDNN, independent speaker check when Deepgram finds <=1 speaker, `identificationStatus` / `suggestedRole` on speakers (suggestion only; `role` stays the doctor's). Encrypted profiles, explicit consent. Measured on SYNTHETIC voices only: 0/162 false doctor matches with the doctor absent; recovers 3 of 11 Deepgram merges at the conservative setting; thresholds must be re-measured with real consenting speakers. See docs/VOICE_EVALUATION.md and Contract v4. Setup: `npm run setup:voice`, set `VOICE_PROFILE_KEY`.
+- v4 (merged into `main` via PR #8): **doctor voice enrollment and identification** (`/api/me/voice-profile`), local SpeechBrain ECAPA-TDNN, independent speaker check when Deepgram finds <=1 speaker, `identificationStatus` / `suggestedRole` on speakers (suggestion only; `role` stays the doctor's). Encrypted profiles, explicit consent. Measured on SYNTHETIC voices only: 0/162 false doctor matches with the doctor absent; recovers 3 of 11 Deepgram merges at the conservative setting; thresholds must be re-measured with real consenting speakers. See docs/VOICE_EVALUATION.md and Contract v4. Setup: `npm run setup:voice`, set `VOICE_PROFILE_KEY`.
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
 - Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

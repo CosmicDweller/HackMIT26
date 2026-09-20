@@ -24,8 +24,8 @@ export function useVoiceProfile() {
     refresh();
   }, [refresh]);
 
-  const enroll = useCallback(async (samples: Blob[]) => {
-    const updated = await voiceProfileApi.enroll(samples);
+  const enroll = useCallback(async (samples: Blob[], consentVersion: string) => {
+    const updated = await voiceProfileApi.enroll(samples, consentVersion);
     setProfile(updated);
     return updated;
   }, []);

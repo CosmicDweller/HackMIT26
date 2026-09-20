@@ -73,11 +73,17 @@ export function createMockTranscription(ownerId: string): Transcription {
 
   const speakers = structuredClone(FIXTURE_SPEAKERS);
   // Only suggest a voice match when the doctor has actually enrolled a profile — the
-  // suggestion is advisory (identificationStatus), never auto-assigned to `role`.
+  // suggestion is advisory (identificationStatus/suggestedRole), never auto-assigned to `role`.
   const enrolled = isEnrolled(ownerId);
   if (enrolled) {
     speakers[0].identificationStatus = "matched";
-    for (let i = 1; i < speakers.length; i++) speakers[i].identificationStatus = "unknown";
+    speakers[0].suggestedRole = "doctor";
+    for (let i = 1; i < speakers.length; i++) {
+      // The minor/nurse speaker has too little speech for a confident call either way —
+      // demonstrates "uncertain" distinctly from "unknown" (a confident non-match).
+      speakers[i].identificationStatus = speakers[i].id === "speaker_3" ? "uncertain" : "unknown";
+      speakers[i].suggestedRole = null;
+    }
   }
 
   // reviewStatus only ever changes via the explicit review action — never
@@ -95,7 +101,8 @@ export function createMockTranscription(ownerId: string): Transcription {
     diarization: { status: "ok", speakerCount: FIXTURE_SPEAKERS.length },
     status: "completed",
     diarizationStatus: "completed",
-    voiceIdentificationStatus: enrolled ? "completed" : "unavailable",
+    voiceIdentificationStatus: enrolled ? "completed" : "not_enrolled",
+    speakerSource: "deepgram",
     warnings: minorSpeaker
       ? [
           {

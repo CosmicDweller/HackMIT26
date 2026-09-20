@@ -31,7 +31,11 @@ export type ApiErrorCode =
   | "INVALID_REQUEST"
   | "SERVER_ERROR"
   /** 409 — a PATCH/approve was based on a stale revision (proposed, additive). */
-  | "CONFLICT";
+  | "CONFLICT"
+  /** Contract v4 voice-enrollment error codes. */
+  | "CONSENT_REQUIRED"
+  | "ENROLLMENT_REJECTED"
+  | "CONFIRMATION_REQUIRED";
 
 /** Client-only error codes for failures that never reach the API. */
 export type ClientErrorCode = "NETWORK_ERROR" | "UNSUPPORTED_FILE";
