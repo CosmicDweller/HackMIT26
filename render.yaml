@@ -1,0 +1,35 @@
+# Render Blueprint for the backend. Create it from the Render dashboard:
+#   New -> Blueprint -> pick this repo -> Apply, then fill in the secrets marked sync:false.
+#
+# The client stays on Vercel. Only the API runs here.
+services:
+  - type: web
+    name: scribe-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: starter # needs a persistent disk, which the free plan does not offer
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      # SQLite holds the transcripts and SOAP notes. Without a disk every deploy would start empty.
+      name: scribe-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      # Render provides PORT; the app reads it.
+      - key: PORT
+        value: 3001
+      # Set in the dashboard, never committed.
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      # Only needed if voice profiles are re-enabled; harmless to leave unset here.
+      - key: VOICE_PROFILE_KEY
+        sync: false
+      # Comma-separated list of allowed browser origins — the deployed client, and localhost for development.
+      - key: CORS_ORIGIN
+        sync: false

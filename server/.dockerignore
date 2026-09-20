@@ -1,0 +1,18 @@
+# Keep the image small and the upload fast. The Python virtualenvs alone are ~700 MB and are unused in the container (voice and
+# pyannote are disabled there), and the local database must never be baked into an image.
+node_modules
+**/.venv
+.venv-diarization
+voice/.venv
+voice/lab
+diarization/.venv
+models
+data
+tests
+*.sqlite
+*.sqlite-journal
+.env
+.env.*
+!.env.example
+npm-debug.log*
+.DS_Store
