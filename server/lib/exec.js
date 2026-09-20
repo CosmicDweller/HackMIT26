@@ -8,12 +8,12 @@ import path from "node:path";
  * Aborting `signal` kills the process. Rejects with an Error carrying `.notFound`
  * (executable missing), `.timedOut` or `.aborted`.
  */
-export function run(file, args, { timeoutMs, signal, input, maxBuffer = 1024 * 1024 } = {}) {
+export function run(file, args, { timeoutMs, signal, input, env, maxBuffer = 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       file,
       args,
-      { timeout: timeoutMs, signal, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true },
+      { timeout: timeoutMs, signal, killSignal: "SIGKILL", maxBuffer, shell: false, windowsHide: true, ...(env ? { env: { ...process.env, ...env } } : {}) },
       (error, stdout, stderr) => {
         if (!error) return resolve({ stdout, stderr });
         error.stdout = stdout;

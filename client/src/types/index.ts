@@ -35,7 +35,17 @@ export type ApiErrorCode =
   /** Contract v4 voice-enrollment error codes. */
   | "CONSENT_REQUIRED"
   | "ENROLLMENT_REJECTED"
-  | "CONFIRMATION_REQUIRED";
+  | "CONFIRMATION_REQUIRED"
+  /** SOAP note error codes (docs/SOAP_API_CONTRACT.md). */
+  | "NOTE_APPROVED"
+  | "UNRESOLVED_FLAGS"
+  | "SOURCE_CHANGED"
+  | "NOT_READY"
+  | "EMPTY_NOTE"
+  | "NOT_APPROVED"
+  | "FLAG_BLOCKING"
+  | "REVIEW_REQUIRED"
+  | "SOAP_DISABLED";
 
 /** Client-only error codes for failures that never reach the API. */
 export type ClientErrorCode = "NETWORK_ERROR" | "UNSUPPORTED_FILE";

@@ -19,9 +19,11 @@
     "doctor": "node --env-file-if-exists=.env scripts/doctor.js",
     "check-token": "node --env-file-if-exists=.env scripts/check-token.js",
     "check-deepgram": "node --env-file-if-exists=.env scripts/check-deepgram.js",
-    "eval:deepgram": "node --env-file-if-exists=.env scripts/eval-deepgram.js"
+    "eval:deepgram": "node --env-file-if-exists=.env scripts/eval-deepgram.js",
+    "setup:pyannote": "sh diarization/setup-pyannote.sh"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "express": "^5.2.1",
     "jose": "^6.2.12",
     "multer": "^2.4.0"

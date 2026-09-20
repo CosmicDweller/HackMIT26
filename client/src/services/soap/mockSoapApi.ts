@@ -7,6 +7,7 @@ import {
   preferences,
   recoverOrCreateNote,
   requireOwnedNote,
+  restartGeneration,
   toPublicNote,
 } from "@/services/soap/mockSoapStore";
 import { buildSimplePdf } from "@/lib/simplePdf";
@@ -67,19 +68,30 @@ export const mockSoapApi: SoapApi = {
     for (const { key, heading } of SOAP_SECTION_ORDER) {
       if (patch.sections[key] !== note.sections[key]) {
         for (const claim of note.claims) {
-          if (claim.section === key) claim.needsReview = true;
+          if (claim.section === key) {
+            claim.needsReview = true;
+            claim.editedByDoctor = true;
+          }
         }
-        if (!note.reviewFlags.some((f) => f.code === "SECTION_EDITED" && f.section === key)) {
+        if (!note.reviewFlags.some((f) => f.type === "edited_claim" && f.section === key)) {
           note.reviewFlags.push({
-            code: "SECTION_EDITED",
-            message: `${heading} was edited — verify its citations below.`,
+            id: `flag_edited_${key}`,
+            type: "edited_claim",
+            severity: "warning",
             section: key,
+            claimId: null,
+            message: `${heading} was edited — verify its citations below.`,
+            blocking: false,
+            resolved: false,
+            acknowledgedAt: null,
+            source: "validator",
           });
         }
       }
     }
     note.sections = { ...patch.sections };
     note.revision += 1;
+    note.edited = true;
     return toPublicNote(note);
   },
 
@@ -106,6 +118,50 @@ export const mockSoapApi: SoapApi = {
     }
     note.status = "approved";
     note.approvedAt = new Date().toISOString();
+    return toPublicNote(note);
+  },
+
+  async reconcile(transcriptionId, revision) {
+    const ownerId = await requireUserId();
+    const note = requireOwnedNote(transcriptionId, ownerId);
+    await delay(undefined, 300);
+    if (revision !== note.revision) {
+      throw new TranscribeApiError({
+        error: "This note was changed elsewhere. Reload to see the latest version.",
+        code: "CONFLICT",
+      });
+    }
+    note.sourceStale = false;
+    note.sourceTranscriptRevision = note.transcriptRevision;
+    return toPublicNote(note);
+  },
+
+  async retry(transcriptionId) {
+    const ownerId = await requireUserId();
+    const note = requireOwnedNote(transcriptionId, ownerId);
+    await delay(undefined, 300);
+    // Only a failed note is ever regenerated; a good draft is returned untouched.
+    if (note.status !== "failed") return toPublicNote(note);
+    note.status = "processing";
+    note.generationStage = "queued";
+    note.errorCode = null;
+    restartGeneration(note);
+    return toPublicNote(note);
+  },
+
+  async acknowledgeFlag(transcriptionId, flagId) {
+    const ownerId = await requireUserId();
+    const note = requireOwnedNote(transcriptionId, ownerId);
+    await delay(undefined, 250);
+    const flag = note.reviewFlags.find((f) => f.id === flagId);
+    if (!flag) throw new TranscribeApiError({ error: "Flag not found.", code: "NOT_FOUND" });
+    if (flag.blocking) {
+      throw new TranscribeApiError({
+        error: "This statement isn't supported by the transcript — correct or remove it instead.",
+        code: "FLAG_BLOCKING",
+      });
+    }
+    flag.acknowledgedAt = new Date().toISOString();
     return toPublicNote(note);
   },
 

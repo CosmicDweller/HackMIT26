@@ -105,19 +105,70 @@ Deepgram finding more speakers than the analysis, a segmentation failure, and a 
 
 ## Long recordings
 
+**Since 2026-09-20 one recording is at most 30 minutes** (product decision; the earlier 2-hour maximum was removed, see Contract v5). The measurements below were made
+with a two-hour test file, which is no longer an accepted length, and are kept because they explain the current settings.
+
 Measured with `node scripts/probe-voice-long.mjs --minutes 120` (150 repetitions of a two-person conversation, 230 MB WAV, 7,200 s; analysis only, no Deepgram call):
 
 | Case | Time | Peak memory of the voice model | Result |
 | --- | --- | --- | --- |
 | Deepgram separated the speakers | 5 s | 621 MB (Node process stayed near 110 MB) | doctor matched, patient unknown, all 13,200 words kept, no timestamp going backwards, last word at 7,197 s |
-| Deepgram merged them | 3 s | 550 MB | independent check **skipped with a warning**, see below |
+| Deepgram merged them | 3 s | 550 MB | independent check skipped with a warning (because it was over the then 30-minute check limit) |
 
-**Found by this measurement and fixed:** the independent check runs the segmentation model over the whole recording; a first two-hour run silently hit the default 60 s timeout and
-did nothing. Measured cost: about 2 minutes for 20 minutes of audio, and over 10 minutes for two hours (worse than linear). Now, recordings over `VOICE_INDEPENDENT_MAX_SECONDS`
-(default 1,800) skip the independent check and add the warning `INDEPENDENT_SPEAKER_CHECK_SKIPPED`; shorter ones get a timeout in proportion to their length;
-a failure adds `VOICE_ANALYSIS_FAILED`. Doctor identification embeds at most 120 evenly spread regions per speaker, so it stays fast at any length.
-For a two-hour recording where Deepgram merged voices, therefore, the merge is neither detected nor repaired; the warning tells the doctor to assign speakers by hand.
-(In the merged two-hour probe the merged speaker was `unknown`: it was a mix of both voices, so its status describes the mix, not either person.)
+**Found by this measurement and fixed:** the independent (sherpa) check runs the segmentation model over the whole recording; a first two-hour run silently hit the default 60 s timeout and
+did nothing. Measured cost: about 2 minutes for 20 minutes of audio, and over 10 minutes for two hours (worse than linear). It now gets a timeout in proportion to the recording's length,
+adds `INDEPENDENT_SPEAKER_CHECK_SKIPPED` above `VOICE_INDEPENDENT_MAX_SECONDS`, and `VOICE_ANALYSIS_FAILED` when it cannot run. Because that limit (default 1,800 s) now equals the 30-minute
+recording maximum, with the defaults the check runs on every recording that is accepted. Doctor identification embeds at most 120 evenly spread regions per speaker, so it stays fast at any length.
+
+## pyannote Community-1 as the diarizer (measured 2026-09-20)
+
+`pyannote/speaker-diarization-community-1` (CC-BY-4.0, gated, runs locally) now decides who spoke when; Deepgram still decides what was said.
+Measured on the SAME 162 synthetic two-person recordings, with the same manual labels (`node scripts/eval-pyannote.mjs`). pyannote ran once per
+recording and its output was cached, so all policies were compared on identical model output.
+
+**The policy question: when should pyannote's labels replace Deepgram's?**
+
+| Configuration | Speaker count correct | Merges left | False splits | Word-to-speaker | DER |
+| --- | --- | --- | --- | --- | --- |
+| A. Deepgram alone | 93.2% | 11 | 0 | 96.5% | 7.2% |
+| C1. pyannote always wins | **76.5%** | **38** | 0 | 88.2% | 15.9% |
+| C2. **pyannote only when it hears MORE speakers (default)** | **96.3%** | **6** | **0** | **97.7%** | **6.1%** |
+| C3. pyannote only when Deepgram found at most one | 96.3% | 6 | 0 | 97.7% | 6.1% |
+
+**Letting pyannote always win is worse than not using it at all.** It merged 32 of the 151 recordings Deepgram had labelled correctly
+(on this material pyannote is the more conservative of the two: it reported one speaker for 36 of 162 recordings). The default is therefore
+`more-speakers`: pyannote runs on every recording, but its labels are adopted only when it heard *more* speakers than Deepgram. That is a
+strict improvement — it cannot make a correct Deepgram result worse, and **broke 0 of 151**.
+
+C2 and C3 are identical on this data (every recovery here came from a Deepgram merge). `more-speakers` is the default because it can also
+catch a third speaker Deepgram missed, which this two-person set cannot exercise.
+
+**Merge recovery, the failure this work targets:** of the 11 recordings Deepgram merged, pyannote recovered **5** (45.5%), against **3**
+for the older sherpa-onnx + ECAPA detector measured earlier on the same recordings. On those 11: word-to-speaker 59.7% → 76.7%, DER 46.5% → 29.6%.
+(A and C were measured in one run; the 3/11 for the older detector comes from the earlier run recorded above, not from the same invocation.)
+
+**No words are lost:** 162/162 recordings kept every Deepgram word after realignment.
+
+**Cost:** pyannote averages 7.5 s per 21 s recording on an M4 Pro (CPU), against 3.1 s for the older detector. Model load is about 0.7 s warm,
+12 s on the first load of a process.
+
+**Doctor identification on pyannote's speakers** (same thresholds as before): doctor `matched` 59.3%, `uncertain` 38.3%, `unknown` 2.5%.
+The other voice: `matched` 1.9% (3 of 162, all where the two voices were still merged into one speaker), `uncertain` 96.3%, `unknown` 1.9%.
+**Doctor-absent control: 0 of 162 false matches.**
+
+### Scenario fixtures with the real model
+
+`diarization/pyannote_smoke_test.py` runs three labelled conversations through the real worker, each with `num_speakers=2` and with automatic
+detection. `dpdp` (45 s, doctor/patient alternating four times) and `two-speaker` (17 s) both pass: two speakers, correct alternation, and the
+returning voice keeps one id. **Measured limit:** the 7 s `aba` clip (one exchange: "Are you eating regularly?" / "I eat two meals per day." /
+"Have you noticed any weight changes?") is reported as ONE speaker by pyannote, with or without `num_speakers=2`. The same audio repeated so
+there are two exchanges is separated correctly, so the cause is too little evidence, not the voices. The smoke test reports this case as a known
+limit rather than hiding it; `--strict` fails on it.
+
+Speaker counts on the other labelled fixtures (real model, automatic detection): correct for `two-speaker`, `single-speaker`, `overlap`,
+`medical`, `deepgram-miss`, `different-mic`, `doctor-absent`, `doctor-alone`, `dpdp`, `patient-alone`, `short-doctor-reply`, `three-speakers`;
+wrong for `aba` (1 of 2), `three-speaker` (2 of 3), `similar-voices` (1 of 2, the acoustically identical pair), and `long-gap` (3 of 2, a
+false split on a 195 s recording with a 2.5 minute gap).
 
 ## Known limitations (all measured)
 
@@ -127,8 +178,8 @@ For a two-hour recording where Deepgram merged voices, therefore, the merge is n
 - **Short recordings** (about 20 s) mostly give `uncertain` rather than `matched`.
 - **Hoarse or variable voices** may be rejected at enrollment (one held-out synthetic voice was) or score low.
 - **Real speakers, real microphones and clinical noise were not measured.** Neither were accents, illness, multiple rooms or crosstalk.
+- **pyannote false-splits a long recording with a very long gap** (`long-gap`, 195 s: 3 speakers found where there are 2), and merges a single short exchange (`aba`). Both are above.
 - **Three-speaker counting** is the weakest case (91.6% at the calibration plateau; lower at the more conservative threshold actually used, about 74% in an earlier measurement).
-- **Recordings over 30 minutes** skip the independent check (above).
 - **Existing transcripts cannot be reprocessed**: the recording is deleted when a job completes, so a "reprocess speakers" endpoint is not implemented. A design that would allow it (opt-in, encrypted, time-limited audio retention) is a privacy decision for the product owner.
 - **Live Deepgram + voice model** tests exist (`tests/real-voice.test.js`, opt-in with `DEEPGRAM_LIVE_TEST=1`) but were **not run**: they upload synthetic audio to a paid service and are held for approval.
 

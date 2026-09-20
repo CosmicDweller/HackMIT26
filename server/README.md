@@ -64,9 +64,9 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   public `/api/transcribe` always uses it. Whisper text is never mixed with Deepgram speakers. Synthetic data only until a BAA
   and the other approvals in the contract exist.
 - **Recordings and jobs.** Every authenticated recording is a persistent job (`POST /api/transcription-jobs`, poll
-  `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 2 hours / 1 GiB,
+  `GET /api/transcription-jobs/:id`; `POST /api/transcriptions` is the wait-for-it convenience). Up to 30 minutes / 512 MiB per recording (a longer consultation is several recordings),
   written to disk (never held in memory), verified by decoding the whole file, sent to Deepgram as FLAC streamed from disk.
-  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (default 2 h; a real 2-hour recording finished in 29 s) need a callback URL, which is off by default and needs a public
+  Recordings over `DEEPGRAM_SYNC_MAX_SECONDS` (default 30 min, the recording maximum, so none by default) need a callback URL, which is off by default and needs a public
   endpoint (it cannot reach localhost); without it they are rejected before any audio is sent. Timeouts and restarts never
   trigger an automatic resubmission (you would be billed twice). See the contract for statuses, errors and retention.
 - **Evaluating it.** `npm run eval:deepgram` scores the live engine on the synthetic recordings (WER, diarization error rate,
@@ -106,8 +106,32 @@ when Deepgram finds at most one speaker, and (C) verification of the enrolled do
 - **Not installed?** Everything still works: identification is `unavailable`, the transcript and Deepgram's speakers are unchanged.
 - **Real-inference tests** (`tests/real-voice.test.js`) run the real model and are skipped when it is not installed. Its live section
   (Deepgram + the real model) needs `DEEPGRAM_LIVE_TEST=1` and uploads a few synthetic recordings.
-- **Probes:** `node scripts/probe-voice-scenarios.mjs` (all fixture scenarios) and `node scripts/probe-voice-long.mjs --minutes 120`
-  (timing and memory of the analysis on a two-hour recording; no Deepgram call).
+- **Probes:** `node scripts/probe-voice-scenarios.mjs` (all fixture scenarios) and `node scripts/probe-voice-long.mjs --minutes 30`
+  (timing and memory of the analysis on a long recording, default 30 minutes; no Deepgram call).
+
+## SOAP notes (Gemini) — contract v6
+
+```bash
+# server/.env  (git-ignored; free-tier key from https://aistudio.google.com/apikey)
+GEMINI_API_KEY=...
+```
+
+Once a transcript is stored, the backend drafts a SOAP note by itself and the doctor reviews, edits, approves and exports it.
+
+- **Two stages, on purpose:** Gemini first extracts clinical facts with the transcript lines they came from, then writes the four sections
+  citing those lines. Asking for a polished note in one step gives fluent text whose sentences cannot be traced to anything.
+- **Deterministic grounding checks** then verify the result against the transcript itself: citations must resolve to real segments, each
+  claim's wording must appear in the section (so the UI can highlight it), every number and medication name must occur in its cited source,
+  and a list of known fabrications (invented exam findings, flipped denials, ICD codes, invented follow-up intervals, routes) is rejected.
+  What cannot be checked mechanically becomes a review flag. **This is a floor under hallucination, not hallucination detection.**
+- **One note per consultation**, never regenerated; approval is explicit and locks the note; only approved notes export (PDF via a small
+  dependency-free writer in `lib/pdf.js`, and TXT).
+- **Privacy:** only transcript text goes to Gemini — never audio, voice embeddings or tokens. Prompt and response content is never logged.
+  The key stays on the server. Synthetic data only; this is not a HIPAA-compliant configuration.
+- Templates: `primary-care-standard` (default), `-concise`, `-detailed`. They change detail, never what may be written.
+- See `docs/SOAP_API_CONTRACT.md` for endpoints and `docs/SOAP_EVALUATION.md` for measured results.
+- `tests/soap-*.test.js` script the provider; `tests/real-soap.test.js` runs the REAL API (skipped without a key);
+  `tests/end-to-end.test.js` runs a real 146 s recording from audio to approved PDF.
 
 ## Preflight check and warm-up
 
@@ -196,8 +220,11 @@ npm test
 - `tests/normalize.test.js`: turning real Deepgram responses (saved in `tests/fixtures/deepgram/`) into segments.
 - `tests/deepgram.test.js`: the Deepgram client against a stub (exact parameters, streaming, error classification, no key leakage).
 - `tests/jobs.test.js`: the job system against a stub that replays real responses (lifecycle, retries, duplicate-charge safety,
-  restart recovery, retention, callbacks, ownership, a real 7200 s boundary).
+  restart recovery, retention, callbacks, ownership, a real 1800 s boundary and the removed two-hour limit).
 - `tests/voice-math.test.js`, `voice-profile.test.js`, `voice-analysis.test.js`, `voice-jobs.test.js`: the voice feature with scripted stand-in embeddings (clustering parity with SciPy, consent/quality/encryption/ownership, decision policy, alignment, job integration).
+- `tests/soap-validate.test.js`, `soap-api.test.js`: SOAP grounding checks and the full note workflow (scripted provider).
+- `tests/end-to-end.test.js`: a real 146 s recording through the whole product to an approved PDF (real pyannote; Deepgram and Gemini scripted).
+- `tests/real-soap.test.js`: REAL Gemini generation, skipped without `GEMINI_API_KEY`.
 - `tests/real-voice.test.js`: the REAL voice model and enrollment on synthetic voices (skipped if not installed); live Deepgram section opt-in.
 - `tests/real-deepgram.test.js`: LIVE Deepgram through the full stack; skipped unless `DEEPGRAM_LIVE_TEST=1` and a key are set.
 - `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on

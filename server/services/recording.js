@@ -32,7 +32,7 @@ async function probeDuration(file, config, timeoutMs, signal) {
  * Verify a stored recording and turn it into a compact, file-backed, provider-ready file.
  *
  *  - Decodes the WHOLE recording with FFmpeg, so corruption is detected here, not by the provider.
- *  - Writes mono 16 kHz FLAC (lossless, roughly 40 KB/s, so a two-hour recording is a few hundred MB on
+ *  - Writes mono 16 kHz FLAC (lossless, roughly 40 KB/s, so a 30-minute recording is under 100 MB on
  *    disk and never held in memory).
  *  - Measures the real decoded duration from the output (browser recordings often have no duration
  *    header, so the input's own metadata is not trusted) and enforces the maximum.

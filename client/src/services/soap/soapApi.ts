@@ -52,8 +52,31 @@ export const soapApi: SoapApi = {
     return apiRequest<SoapNote>(`/api/transcriptions/${transcriptionId}/soap/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // confirmReviewed is required: approving without it is 400 REVIEW_REQUIRED. The UI
+      // asks for deliberate confirmation before calling this.
+      body: JSON.stringify({ revision, confirmReviewed: true }),
+    });
+  },
+
+  reconcile(transcriptionId, revision) {
+    return apiRequest<SoapNote>(`/api/transcriptions/${transcriptionId}/soap/reconcile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ revision }),
     });
+  },
+
+  retry(transcriptionId) {
+    return apiRequest<SoapNote>(`/api/transcriptions/${transcriptionId}/soap/retry`, {
+      method: "POST",
+    });
+  },
+
+  acknowledgeFlag(transcriptionId, flagId) {
+    return apiRequest<SoapNote>(
+      `/api/transcriptions/${transcriptionId}/soap/flags/${flagId}/acknowledge`,
+      { method: "POST" },
+    );
   },
 
   export(transcriptionId, format) {

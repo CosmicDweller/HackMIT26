@@ -179,6 +179,46 @@ export function useSoapNote(transcriptionId: string) {
     [conflictNote, transcriptionId],
   );
 
+  /** Wraps a note-returning action that needs no revision bookkeeping. */
+  const runAction = useCallback(
+    async (action: () => Promise<SoapNote>, failureMessage: string): Promise<boolean> => {
+      setApproveError(null);
+      try {
+        setNote(await action());
+        return true;
+      } catch (err) {
+        setApproveError(err instanceof TranscribeApiError ? err.message : failureMessage);
+        return false;
+      }
+    },
+    [],
+  );
+
+  /** Confirms the doctor re-checked an edited transcript, clearing the stale-source block. */
+  const reconcile = useCallback(async () => {
+    if (!note) return false;
+    return runAction(
+      () => soap.reconcile(transcriptionId, note.revision),
+      "Couldn't reconcile this note with the updated transcript.",
+    );
+  }, [note, transcriptionId, runAction]);
+
+  /** Only meaningful for a `failed` note — the backend refuses to touch a good draft. */
+  const retry = useCallback(async () => {
+    const ok = await runAction(() => soap.retry(transcriptionId), "Couldn't retry generation.");
+    if (ok) poll();
+    return ok;
+  }, [transcriptionId, runAction, poll]);
+
+  const acknowledgeFlag = useCallback(
+    (flagId: string) =>
+      runAction(
+        () => soap.acknowledgeFlag(transcriptionId, flagId),
+        "Couldn't acknowledge that flag.",
+      ),
+    [transcriptionId, runAction],
+  );
+
   const discardConflict = useCallback(() => {
     if (conflictNote) setNote(conflictNote);
     setConflictNote(null);
@@ -204,6 +244,9 @@ export function useSoapNote(transcriptionId: string) {
     save,
     retryAfterConflict,
     approve,
+    reconcile,
+    retry,
+    acknowledgeFlag,
     discardConflict,
     refresh,
   };

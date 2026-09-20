@@ -43,7 +43,7 @@ export function requireOwnedNote(transcriptionId: string, ownerId: string): Stor
   return note;
 }
 
-async function runGeneration(note: StoredSoapNote) {
+export async function restartGeneration(note: StoredSoapNote) {
   const stages: { stage: SoapGenerationStage; ms: number }[] = [
     { stage: "queued", ms: 400 },
     { stage: "extracting", ms: 700 },
@@ -64,10 +64,17 @@ async function runGeneration(note: StoredSoapNote) {
   note.claims = structuredClone(FIXTURE_SOAP_CLAIMS);
   note.reviewFlags = note.claims
     .filter((c) => c.needsReview)
-    .map((c) => ({
-      code: "CLAIM_NEEDS_REVIEW",
-      message: `A statement in ${c.section} needs clinician verification: "${c.text}"`,
+    .map((c, i) => ({
+      id: `flag_${i + 1}`,
+      type: "needs_verification",
+      severity: "warning" as const,
       section: c.section,
+      claimId: c.id,
+      message: `A statement in ${c.section} needs clinician verification: "${c.text}"`,
+      blocking: false,
+      resolved: false,
+      acknowledgedAt: null,
+      source: "validator",
     }));
 }
 
@@ -79,13 +86,18 @@ function newNote(transcriptionId: string, ownerId: string, templateId: SoapTempl
     templateId,
     status: "processing",
     generationStage: "queued",
+    errorCode: null,
     revision: 1,
     sourceTranscriptRevision,
+    transcriptRevision: sourceTranscriptRevision,
+    sourceStale: false,
+    edited: false,
     sections: { subjective: "", objective: "", assessment: "", plan: "" },
     claims: [],
     reviewFlags: [],
+    provider: "mock",
+    model: "mock-soap-v1",
     approvedAt: null,
-    error: null,
   };
 }
 
@@ -96,7 +108,7 @@ export function autoStartSoapGeneration(transcriptionId: string, ownerId: string
   const transcription = transcriptionsStore.get(transcriptionId);
   const note = newNote(transcriptionId, ownerId, getPreferenceFor(ownerId), transcription?.revision ?? 1);
   notes.set(transcriptionId, note);
-  runGeneration(note);
+  restartGeneration(note);
 }
 
 /** Idempotent recovery: only creates a note if one doesn't already exist. */
@@ -119,7 +131,7 @@ export function recoverOrCreateNote(transcriptionId: string, ownerId: string): S
   }
   const note = newNote(transcriptionId, ownerId, getPreferenceFor(ownerId), transcription?.revision ?? 1);
   notes.set(transcriptionId, note);
-  runGeneration(note);
+  restartGeneration(note);
   return note;
 }
 

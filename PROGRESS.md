@@ -1,41 +1,38 @@
 # Progress
 
 ## Current milestone
-**Bug-hunt pass over `main` + `kv`; three client bugs found, reproduced and
-fixed.** Server is clean — its suite passes (321 tests: 315 pass, 0 fail, 6
-skipped opt-in live tests) and a hand review of the new voice
-analysis/embedder code found nothing. All three bugs were in the client,
-which has no automated tests; each was reproduced in the browser before
-fixing and re-verified after.
+**SOAP notes are wired to the real backend (PR #9).** Merged their SOAP
+implementation and reconciled the client against `docs/SOAP_API_CONTRACT.md`
+rather than the issue summary. `VITE_USE_MOCK_SOAP=false` — every mock flag
+is now off.
 
-1. **Approving a note with unsaved edits always failed with a false
-   "changed elsewhere" conflict** (`SoapEditor.tsx`). `handleApprove` saves
-   first, then approves — but `approve` was bound to the `note` captured at
-   click time, so it sent the pre-save revision while the save had already
-   advanced the server to the next one. Reproduced: server reached revision
-   2, approve sent 1, got a 409, note stayed unapproved and the doctor saw a
-   conflict nobody caused. This is the exact "save current edits, then
-   approve" sequence the brief requires, so it broke a stated requirement.
-   Missed earlier because the end-to-end test clicked Save Draft *before*
-   Approve. Fixed by having `save()` return the updated note and `approve()`
-   take a revision override. Re-verified: same scenario now approves
-   cleanly with the edit included and no conflict banner.
-2. **SOAP note didn't re-fetch when the route's `:id` changed**
-   (`useSoapNote.ts`). The `startedRef` guard added for StrictMode was never
-   reset, so the effect re-ran on an id change but skipped the fetch —
-   showing one consultation's SOAP note under another (confirmed directly:
-   URL showed transcript B while A's review flag and conflict banner were
-   still rendered). `useTranscriptionEditor` *does* re-fetch, so the pairing
-   would have been transcript B + note A — a wrong-consultation mismatch.
-   Not reachable through today's UI (no transcript-to-transcript links, so
-   every path unmounts the viewer), but a landmine for anyone adding
-   next/previous navigation. Fixed by keying the guard on the id, resetting
-   per-note state on change, guarding late-resolving requests, and keying
-   `SoapEditor` by transcript id so its local draft can't carry over.
-3. **Idle waveform line invisible in dark mode** (`LiveWaveform.tsx`).
-   `ctx.strokeStyle = "currentColor"` — canvas has no such keyword;
-   verified the assignment is silently ignored, leaving black. Fixed to
-   resolve the inherited color via `getComputedStyle`. Cosmetic.
+Contract differences found and fixed (all additive, as they said):
+- `errorCode: string | null` replaces the invented `error: {code,message}`.
+- New note fields wired: `transcriptRevision`, `sourceStale`, `edited`,
+  `provider`, `model`, `approvedBy`; `claims[].editedByDoctor`.
+- `reviewFlags[]` was a completely different shape — now
+  `{ id, type, severity, section, claimId, message, blocking, resolved,
+  acknowledgedAt, source }`.
+- **approve requires `confirmReviewed: true`** — without it the real backend
+  returns `400 REVIEW_REQUIRED`, so approval would have failed outright.
+- Three endpoints added: `reconcile`, `retry`, `flags/:id/acknowledge`.
+- Staleness now reads the backend's own `sourceStale` instead of the client
+  comparing revisions itself.
+
+UI consequences: blocking flags render as must-fix (no acknowledge button,
+and they disable Approve) while advisory flags are acknowledgeable;
+`sourceStale` offers "I've re-checked this against the transcript" rather
+than silently regenerating; a failed note shows a plain-language reason and
+a retry.
+
+**Verified against the live backend:** templates and preference round-trip,
+GET 404 -> POST recovery, and the `failed` path end to end. **Real Gemini
+generation is NOT yet verified from the client** — the free tier is 20
+requests/model/day and the backend agent's 13 real-Gemini tests used today's
+quota, so generation currently returns `PROVIDER_QUOTA_EXCEEDED`. The client
+handles that correctly (plain-language message, retry offered, transcript
+untouched), but a successful real note through the UI has to wait for the
+quota to reset.
 
 ## Previous milestone — recording limit lowered from 2 hours to 30 minutes
 Product decision,
@@ -421,22 +418,24 @@ With the client pointed at it for real:
   (`oxlint`) and build (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Set up the local voice model (`npm run setup:voice`) to verify a full real
-enrollment; wait for the backend agent's response to the SOAP-notes
-proposal on issue #3; get a Deepgram API key to verify the real engine;
-then decide on deployment: client to Vercel, backend to a machine that can
-run whisper.cpp/Deepgram + the diarization/voice venvs (per backend's
-tunnel plan).
+Integrate the merged SOAP backend (PR #9): reconcile the client against
+`docs/SOAP_API_CONTRACT.md`, wire the additive fields (`sourceStale`,
+`transcriptRevision`, `blocking` review flags, `reconcile`), then switch
+`VITE_USE_MOCK_SOAP=false` and verify real Gemini generation end to end.
 
 ## Backend status (lz)
 - v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
-- v3 (merged into `main`, commit 3eca76d): **Deepgram Nova-3 Medical + the latest batch diarizer is the primary engine**, with a persistent job system
-  (`/api/transcription-jobs*`), file-backed recordings up to 2 hours, `needsReview` flags, `diarizationStatus`, and a secured (off by
+- v3 (merged into `main`): **Deepgram Nova-3 Medical + the latest batch diarizer is the primary engine**, with a persistent job system
+  (`/api/transcription-jobs*`), file-backed recordings up to **30 minutes each** (limit lowered from 2 hours on 2026-09-20; the frontend's recorder still says 2 h: see Contract v5), `needsReview` flags, `diarizationStatus`, and a secured (off by
+
   default) callback listener for long recordings. whisper.cpp remains an optional fallback (`STT_ENGINE=local`).
 - Verified live with synthetic audio: exact request, model `medical-nova-3`, diarizer v2, A-B-A / 3-speaker / 5-minute recordings
-  through the full stack, including **30-minute and 2-hour recordings** (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
+  through the full stack, including 30-minute and (before the limit was lowered) 2-hour recordings (2 h: 29 s end to end, WER 0.73%, DER 0.63%, server memory +110 MB). Known flaws: the 3-speaker case
   misattributes a sentence, and the 2-hour recording produced a spurious 3rd speaker (0.08% of speech; now flagged with a warning, not reassigned).
-  Synchronous limit default raised to 2 h. **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
+  Synchronous limit default is now 30 min (equal to the recording maximum). **Not verified:** callbacks against the real service (not needed at these speeds), real microphones/patients.
 - v4 (merged into `main` via PR #8): **doctor voice enrollment and identification** (`/api/me/voice-profile`), local SpeechBrain ECAPA-TDNN, independent speaker check when Deepgram finds <=1 speaker, `identificationStatus` / `suggestedRole` on speakers (suggestion only; `role` stays the doctor's). Encrypted profiles, explicit consent. Measured on SYNTHETIC voices only: 0/162 false doctor matches with the doctor absent; recovers 3 of 11 Deepgram merges at the conservative setting; thresholds must be re-measured with real consenting speakers. See docs/VOICE_EVALUATION.md and Contract v4. Setup: `npm run setup:voice`, set `VOICE_PROFILE_KEY`.
+- v5 (merged into `main` via PR #9): **pyannote Community-1 diarization** (local, gated model, `npm run setup:pyannote`). Deepgram still transcribes; pyannote decides who spoke when and its turns are aligned to Deepgram's words. Default policy `more-speakers` (adopt pyannote only when it hears MORE speakers): measured on 162 synthetic recordings it recovers 5 of 11 Deepgram merges with 0 regressions and 0 false splits, where "always" would have broken 32 of 151. Measured limit: one short exchange (7 s) is heard as one speaker.
+- v6 (merged into `main` via PR #9): **SOAP notes via Gemini 2.5 Flash.** Two-stage generation (facts with sources, then composition) from the FINAL STORED transcript, deterministic grounding checks against that transcript, review flags, doctor editing with optimistic concurrency, explicit approval that locks the note, PDF/TXT export. One note per consultation, never regenerated. `docs/SOAP_API_CONTRACT.md` (frontend's proposed contract adopted as-is). Real-Gemini tests written and **run: 13/13 passing** (commit d81c85a).
+
 - Setup: `cd server && npm install && npm run setup:model && npm run setup:diarization && npm run doctor` (set `DEEPGRAM_API_KEY` in `server/.env`).
 - Synthetic data only. Not approved for real patient information (Deepgram BAA, consent, retention, encryption, audit logging all pending).

@@ -28,6 +28,9 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
     save,
     retryAfterConflict,
     approve,
+    reconcile,
+    retry,
+    acknowledgeFlag,
     discardConflict,
   } = useSoapNote(transcription.id);
 
@@ -68,8 +71,14 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
   }
 
   const sections = draft ?? note.sections;
-  const staleSource =
-    transcription.revision != null && transcription.revision !== note.sourceTranscriptRevision;
+  // The backend computes staleness itself; don't second-guess it by comparing revisions.
+  const staleSource = note.sourceStale;
+  // Blocking flags mean a statement the transcript doesn't support: they can't be
+  // acknowledged away, only fixed in the text, and they block approval.
+  const blockingFlags = note.reviewFlags.filter((f) => f.blocking && !f.resolved);
+  const openAdvisoryFlags = note.reviewFlags.filter(
+    (f) => !f.blocking && !f.resolved && !f.acknowledgedAt,
+  );
 
   function updateSection(key: SoapSectionKey, value: string) {
     setDraft({ ...(draft ?? note!.sections), [key]: value });
@@ -94,7 +103,7 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
       setDraft(null);
       setEditingSection(null);
     }
-    const flagCount = note!.reviewFlags.length;
+    const flagCount = openAdvisoryFlags.length;
     const proceed = window.confirm(
       flagCount > 0
         ? `This note still has ${flagCount} unresolved review flag${flagCount === 1 ? "" : "s"}. Approve anyway?`
@@ -165,29 +174,72 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
           <SoapGenerationStatus stage={note.generationStage} />
         )}
         {note.status === "failed" && (
-          <SoapGenerationStatus stage={null} error={note.error} />
+          <div className="space-y-2">
+            <SoapGenerationStatus stage={null} errorCode={note.errorCode} />
+            <Button variant="outline" size="sm" onClick={retry}>
+              Try generating again
+            </Button>
+          </div>
         )}
 
         {(note.status === "draft_ready" || note.status === "approved") && (
           <>
             {staleSource && (
-              <p className="flex items-start gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                The transcript was edited after this note was generated. Review the
-                changes in the transcript panel before approving — this note won't
-                update automatically.
-              </p>
+              <div className="space-y-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                <p className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  The transcript was edited after this note was drafted (note is from
+                  revision {note.sourceTranscriptRevision}, transcript is now at{" "}
+                  {note.transcriptRevision}). The note is not updated automatically —
+                  re-check it against the transcript below, then confirm.
+                </p>
+                {note.status !== "approved" && (
+                  <Button variant="outline" size="xs" onClick={reconcile}>
+                    I've re-checked this against the transcript
+                  </Button>
+                )}
+              </div>
             )}
 
-            {note.reviewFlags.length > 0 && (
+            {/* Blocking flags: a statement the transcript doesn't support. No acknowledge
+                button — it has to be corrected or removed in the text. */}
+            {blockingFlags.length > 0 && (
               <div className="space-y-1.5">
-                {note.reviewFlags.map((flag, i) => (
+                {blockingFlags.map((flag) => (
                   <p
-                    key={i}
+                    key={flag.id}
+                    className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                  >
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    <span className="flex-1">
+                      {flag.message}
+                      <span className="mt-0.5 block opacity-80">
+                        This must be corrected or removed before the note can be approved.
+                      </span>
+                    </span>
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {openAdvisoryFlags.length > 0 && (
+              <div className="space-y-1.5">
+                {openAdvisoryFlags.map((flag) => (
+                  <p
+                    key={flag.id}
                     className="flex items-start gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
                   >
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                    {flag.message}
+                    <span className="flex-1">{flag.message}</span>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => acknowledgeFlag(flag.id)}
+                        className="shrink-0 underline underline-offset-2"
+                      >
+                        Mark reviewed
+                      </button>
+                    )}
                   </p>
                 ))}
               </div>
@@ -235,7 +287,17 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
                     {saveState === "saving" ? <Loader2 className="size-4 animate-spin" /> : null}
                     {saveState === "saving" ? "Saving…" : saveState === "saved" && !dirty ? "Saved." : "Save Draft"}
                   </Button>
-                  <Button onClick={handleApprove} disabled={approving || staleSource}>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={approving || staleSource || blockingFlags.length > 0}
+                    title={
+                      blockingFlags.length > 0
+                        ? "Unsupported statements must be corrected or removed first"
+                        : staleSource
+                          ? "Re-check the note against the edited transcript first"
+                          : undefined
+                    }
+                  >
                     {approving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                     Approve SOAP Note
                   </Button>
