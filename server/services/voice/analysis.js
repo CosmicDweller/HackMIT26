@@ -121,6 +121,11 @@ export async function independentSpeakers({ wavPath, config, embedder, signal, d
   return { clusters: order.length, labelOf, evidence: order.map((c) => evidence[c]) };
 }
 
+/** Should pyannote run for a recording where Deepgram found `deepgramSpeakers` speakers? (policy: always | more-speakers | when-merged) */
+export function pyannoteWanted(config, deepgramSpeakers) {
+  return config.pyannotePolicy !== "when-merged" || deepgramSpeakers <= 1;
+}
+
 /** Run-length form of the speaker labels as they came from Deepgram: [{ startMs, endMs, speaker }], for diagnostic comparison only. */
 export function speakerRuns(words) {
   const runs = [];
@@ -154,23 +159,31 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
 
   // ---- B1. diarization by pyannote Community-1: who spoke when. Deepgram's WORDS are aligned to its speaker turns. ----
   let fromPyannote = false;
-  if (pyannote && (config.pyannotePolicy === "always" || dgSpeakers.size <= 1) && (await pyannote.available())) {
+  if (pyannote && pyannoteWanted(config, dgSpeakers.size) && (await pyannote.available())) {
     try {
       const diar = await pyannote.diarize(wavPath, { durationSeconds, signal });
       const aligned = alignWords(flat, diar);
       const index = new Map(aligned.speakers.map((label, i) => [label, i])); // recording-wide ids, numbered by first appearance
-      const byWord = new Map(flat.map((word, i) => [word, aligned.labels[i]]));
-      result = relabelSpeakers(normalized, (word) => {
-        const found = byWord.get(word);
-        return found.speaker === null ? null : { speaker: index.get(found.speaker), confidence: found.confidence, overlap: found.overlap, review: found.review };
-      });
-      source = "pyannote";
-      fromPyannote = true;
-      internal.pyannote = {
+      const diagnostics = {
         model: diar.model, versions: diar.versions, device: diar.device, speakers: diar.speakers, loadTimeMs: diar.loadTimeMs, inferenceTimeMs: diar.inferenceTimeMs,
-        processingTimeMs: diar.processingTimeMs, labelToSpeaker: Object.fromEntries(index), alignment: alignmentSummary(aligned.labels), exclusive: diar.exclusive,
+        processingTimeMs: diar.processingTimeMs, alignment: alignmentSummary(aligned.labels), exclusive: diar.exclusive,
       };
-      if (aligned.speakers.length !== dgSpeakers.size) {
+      // policy "more-speakers": pyannote's labels replace Deepgram's only when pyannote heard MORE speakers (it recovers merged voices without
+      // discarding a split Deepgram found and pyannote missed). Otherwise Deepgram's labels stand and pyannote's turns are kept for diagnostics.
+      const adopt = config.pyannotePolicy !== "more-speakers" || aligned.speakers.length > dgSpeakers.size;
+      if (!adopt) {
+        internal.pyannote = { ...diagnostics, used: false, reason: "pyannote did not find more speakers than Deepgram" };
+      } else {
+        const byWord = new Map(flat.map((word, i) => [word, aligned.labels[i]]));
+        result = relabelSpeakers(normalized, (word) => {
+          const found = byWord.get(word);
+          return found.speaker === null ? null : { speaker: index.get(found.speaker), confidence: found.confidence, overlap: found.overlap, review: found.review };
+        });
+        source = "pyannote";
+        fromPyannote = true;
+        internal.pyannote = { ...diagnostics, used: true, labelToSpeaker: Object.fromEntries(index) };
+      }
+      if (adopt && aligned.speakers.length !== dgSpeakers.size) {
         warnings.push({
           code: "SPEAKERS_FROM_PYANNOTE",
           message: `Speaker detection (pyannote) found ${aligned.speakers.length} speaker${aligned.speakers.length === 1 ? "" : "s"} where Deepgram found ${dgSpeakers.size}. The pyannote speakers were used. Please review the speaker labels.`,

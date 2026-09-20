@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { invalidRequest, notFound } from "../lib/errors.js";
+import { AppError, invalidRequest, notFound } from "../lib/errors.js";
 
 export const ROLES = ["doctor", "patient", "other", "unassigned"];
 export const MAX_SEGMENT_TEXT_LENGTH = 10_000;
@@ -114,6 +114,37 @@ const MIGRATIONS = [
   ALTER TABLE speakers ADD COLUMN identification_status TEXT;
   ALTER TABLE speakers ADD COLUMN suggested_role TEXT;
   `,
+  // 5. SOAP notes.
+  //  - transcriptions.revision counts every edit to the transcript (segment text, segment speaker, speaker role). A note records the
+  //    revision it was generated from, so "the transcript changed after this note was written" is detectable instead of assumed.
+  //  - One note per transcription (PRIMARY KEY), so repeated completion events or retries can never create competing drafts.
+  //  - sections/claims/review_flags are JSON documents; the prompt and the provider's raw response are deliberately NOT stored.
+  `
+  ALTER TABLE transcriptions ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE doctors ADD COLUMN soap_template_id TEXT;
+  CREATE TABLE soap_notes (
+    transcription_id            TEXT PRIMARY KEY REFERENCES transcriptions(id) ON DELETE CASCADE,
+    owner_id                    TEXT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    template_id                 TEXT NOT NULL,
+    status                      TEXT NOT NULL CHECK (status IN ('processing', 'draft_ready', 'failed', 'approved')),
+    generation_stage            TEXT,
+    error_code                  TEXT,
+    source_transcript_revision  INTEGER NOT NULL,
+    sections                    TEXT NOT NULL,
+    claims                      TEXT NOT NULL,
+    review_flags                TEXT NOT NULL,
+    revision                    INTEGER NOT NULL DEFAULT 1,
+    edited                      INTEGER NOT NULL DEFAULT 0,
+    provider                    TEXT,
+    model                       TEXT,
+    usage                       TEXT,
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    approved_at                 TEXT,
+    approved_by                 TEXT
+  );
+  CREATE INDEX soap_notes_owner ON soap_notes(owner_id);
+  `,
 ];
 
 export function openStore(dbPath) {
@@ -204,6 +235,19 @@ export function openStore(dbPath) {
     setSegmentSpeaker: db.prepare("UPDATE segments SET speaker_id = ?, needs_review = 0 WHERE transcription_id = ? AND id = ?"),
     setText: db.prepare("UPDATE transcriptions SET text = ? WHERE id = ? AND owner_id = ?"),
     setReview: db.prepare("UPDATE transcriptions SET review_status = ? WHERE id = ? AND owner_id = ?"),
+    // Every edit to a transcript bumps its revision, so a SOAP note can tell whether its sources still say what they said.
+    bumpRevision: db.prepare("UPDATE transcriptions SET revision = revision + 1 WHERE id = ? AND owner_id = ?"),
+    // SOAP notes. Owner-scoped everywhere; the transcription's own ownership is checked first by load().
+    soapGet: db.prepare("SELECT * FROM soap_notes WHERE transcription_id = ? AND owner_id = ?"),
+    soapInsert: db.prepare(
+      `INSERT INTO soap_notes (transcription_id, owner_id, template_id, status, generation_stage, source_transcript_revision,
+                               sections, claims, review_flags, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ),
+    soapList: db.prepare("SELECT transcription_id, status FROM soap_notes WHERE owner_id = ?"),
+    soapStuck: db.prepare("SELECT * FROM soap_notes WHERE status = 'processing' AND updated_at < ?"),
+    prefGet: db.prepare("SELECT soap_template_id FROM doctors WHERE id = ?"),
+    prefSet: db.prepare("UPDATE doctors SET soap_template_id = ? WHERE id = ?"),
   };
 
   const transaction = (work) => {
@@ -229,6 +273,9 @@ export function openStore(dbPath) {
       durationSeconds: row.duration_seconds,
       createdAt: row.created_at,
       reviewStatus: row.review_status,
+      // Counts every edit to this transcript. A SOAP note stores the revision it was written from, so a client (and the
+      // backend) can tell that the sources moved underneath it. Starts at 1; never decreases.
+      revision: row.revision ?? 1,
       engine: row.engine,
       // diarization.status is the original field (kept for existing clients); diarizationStatus is the
       // provider-neutral one: completed | partial | failed.
@@ -376,6 +423,7 @@ export function openStore(dbPath) {
         if (!q.speakerExists.get(id, String(speakerId))) throw invalidRequest("That speaker does not belong to this transcription.");
         q.setRole.run(role, id, String(speakerId));
         q.setReview.run("needs_review", id, ownerId); // changed after review => review again
+        q.bumpRevision.run(id, ownerId); // a SOAP note generated from the old revision is now stale
         return load(ownerId, id);
       });
     },
@@ -401,6 +449,7 @@ export function openStore(dbPath) {
         // Keep the full text consistent with its segments. Audio is never re-transcribed.
         q.setText.run(joinText(q.segments.all(id)), id, ownerId);
         q.setReview.run("needs_review", id, ownerId); // changed after review => review again
+        q.bumpRevision.run(id, ownerId); // a SOAP note generated from the old revision is now stale
         return load(ownerId, id);
       });
     },
@@ -416,5 +465,102 @@ export function openStore(dbPath) {
         return load(ownerId, id);
       });
     },
+
+    // ---- SOAP notes -----------------------------------------------------------------------------
+    // One note per transcription. Everything is scoped to the verified owner, and the parent transcription's ownership is
+    // checked first, so doctor B can never see or touch doctor A's note even with a guessed id.
+
+    /** The note for a transcription, or null. Throws NOT_FOUND when the transcription is not the caller's. */
+    getSoapNote(ownerId, id) {
+      load(ownerId, id); // ownership of the parent transcription
+      return toSoapNote(q.soapGet.get(String(id), ownerId));
+    },
+
+    /**
+     * Claim the single note slot for this transcription, atomically. Returns the new `processing` note, or null when one
+     * already exists (a concurrent or repeated completion event: the caller must not start a second generation).
+     */
+    claimSoapNote(ownerId, id, { templateId, sourceTranscriptRevision }) {
+      return transaction(() => {
+        load(ownerId, id);
+        if (q.soapGet.get(String(id), ownerId)) return null; // already claimed: never a competing draft
+        const now = new Date().toISOString();
+        q.soapInsert.run(String(id), ownerId, templateId, "processing", "queued", sourceTranscriptRevision,
+          JSON.stringify(EMPTY_SECTIONS), "[]", "[]", now, now);
+        return toSoapNote(q.soapGet.get(String(id), ownerId));
+      });
+    },
+
+    /**
+     * Update a note's own fields. `expectedRevision` (for doctor edits) makes the write conditional: it throws CONFLICT when
+     * someone else saved first, so a slow tab cannot overwrite newer edits. Approved notes are read-only.
+     */
+    updateSoapNote(ownerId, id, changes, { expectedRevision = null, allowApproved = false } = {}) {
+      return transaction(() => {
+        load(ownerId, id);
+        const row = q.soapGet.get(String(id), ownerId);
+        if (!row) throw notFound();
+        if (row.status === "approved" && !allowApproved) throw new AppError("NOTE_APPROVED", 409, "This note has been approved and can no longer be changed.");
+        if (expectedRevision !== null && row.revision !== expectedRevision) {
+          throw new AppError("CONFLICT", 409, `This note was changed elsewhere (it is now revision ${row.revision}). Reload it and re-apply your edit.`, { extra: { currentRevision: row.revision } });
+        }
+        const columns = { ...changes };
+        if (columns.sections) columns.sections = JSON.stringify(columns.sections);
+        if (columns.claims) columns.claims = JSON.stringify(columns.claims);
+        if (columns.review_flags) columns.review_flags = JSON.stringify(columns.review_flags);
+        if (columns.usage) columns.usage = JSON.stringify(columns.usage);
+        const allowed = ["status", "generation_stage", "error_code", "sections", "claims", "review_flags", "revision", "edited",
+          "provider", "model", "usage", "approved_at", "approved_by", "source_transcript_revision", "template_id"];
+        const keys = Object.keys(columns);
+        if (keys.length === 0 || keys.some((key) => !allowed.includes(key))) throw new Error("invalid soap note update");
+        db.prepare(`UPDATE soap_notes SET ${keys.map((key) => `${key} = ?`).join(", ")}, updated_at = ? WHERE transcription_id = ? AND owner_id = ?`)
+          .run(...keys.map((key) => columns[key]), new Date().toISOString(), String(id), ownerId);
+        return toSoapNote(q.soapGet.get(String(id), ownerId));
+      });
+    },
+
+    deleteSoapNote(ownerId, id) {
+      return transaction(() => {
+        load(ownerId, id);
+        return db.prepare("DELETE FROM soap_notes WHERE transcription_id = ? AND owner_id = ?").run(String(id), ownerId).changes > 0;
+      });
+    },
+
+    /** Notes stuck in `processing` (a crash or restart mid-generation), for recovery at startup. No owner scoping: worker use only. */
+    stuckSoapNotes: (olderThanIso) => q.soapStuck.all(olderThanIso),
+
+    /** The doctor's chosen SOAP template, or null when they have never chosen one. */
+    soapPreference: (ownerId) => q.prefGet.get(ownerId)?.soap_template_id ?? null,
+    setSoapPreference(ownerId, templateId) {
+      q.prefSet.run(templateId, ownerId);
+      return templateId;
+    },
+  };
+}
+
+const EMPTY_SECTIONS = { subjective: "", objective: "", assessment: "", plan: "" };
+
+/** A stored row as the API resource. Never exposes the provider's raw response (none is stored) or internal columns. */
+function toSoapNote(row) {
+  if (!row) return null;
+  return {
+    id: `soap_${row.transcription_id}`,
+    transcriptionId: row.transcription_id,
+    templateId: row.template_id,
+    status: row.status,
+    generationStage: row.generation_stage,
+    errorCode: row.error_code,
+    revision: row.revision,
+    sourceTranscriptRevision: row.source_transcript_revision,
+    sections: JSON.parse(row.sections),
+    claims: JSON.parse(row.claims),
+    reviewFlags: JSON.parse(row.review_flags),
+    edited: Boolean(row.edited),
+    provider: row.provider,
+    model: row.model,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    approvedAt: row.approved_at,
+    approvedBy: row.approved_by,
   };
 }

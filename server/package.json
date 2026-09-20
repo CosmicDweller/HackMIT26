@@ -23,6 +23,7 @@
     "setup:pyannote": "sh diarization/setup-pyannote.sh"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "express": "^5.2.1",
     "jose": "^6.2.12",
     "multer": "^2.4.0"

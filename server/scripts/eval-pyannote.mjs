@@ -2,9 +2,10 @@
 // to each recording as *.dg.json; manual ground truth in *.truth.json). The SAME recordings and labels are used for every configuration:
 //   A  Deepgram alone
 //   B  Deepgram + the older independent detector (sherpa segmentation + ECAPA clustering)
-//   C  Deepgram words + pyannote Community-1 speaker turns
-//   D  C + the existing doctor voice matching
-// Usage: node scripts/eval-pyannote.mjs [--only-merged] [--limit N] [--refresh] [--policy always|when-merged] [--skip-independent]
+//   C  Deepgram words + pyannote Community-1 speaker turns, under each policy:
+//        C1 always (pyannote's labels replace Deepgram's), C2 more-speakers (used only when pyannote heard more speakers), C3 when-merged (only when Deepgram found <=1)
+//   D  the chosen policy (--policy, default "more-speakers") + the existing doctor voice matching
+// Usage: node scripts/eval-pyannote.mjs [--only-merged] [--limit N] [--refresh] [--policy always|more-speakers|when-merged] [--skip-independent]
 // pyannote runs once per recording and is cached (git-ignored) in tests/.generated/pairs-pyannote/.
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,7 +26,7 @@ const dir = "tests/.generated/pairs";
 const cacheDir = "tests/.generated/pairs-pyannote";
 const labData = "voice/lab/data";
 const limit = Number(arg("limit", Infinity));
-const policy = arg("policy", "always");
+const policy = arg("policy", "more-speakers");
 const work = mkdtempSync(path.join(os.tmpdir(), "evalpyannote-"));
 const config = { ...loadConfig({}), pyannoteEnabled: true, pyannotePolicy: policy, voiceProfileKey: randomBytes(32).toString("base64"), tmpDir: work };
 const pyannoteService = createPyannote(config);
@@ -110,8 +111,10 @@ for (const name of names) {
   };
   const t0 = Date.now();
   const A = { r: { normalized }, m: measure(normalized) };
-  const B = haveVoice ? await analyzeSpeakers({ normalized, wavPath, references: null, config, embedder }) : { normalized, source: "deepgram" };
-  const C = await analyzeSpeakers({ normalized, wavPath, references: null, config, embedder: haveVoice ? embedder : undefined, pyannote: py });
+  const B = haveVoice && !flag("skip-independent") ? await analyzeSpeakers({ normalized, wavPath, references: null, config, embedder }) : { normalized, source: "deepgram" };
+  const variant = (pol) => analyzeSpeakers({ normalized, wavPath, references: null, config: { ...config, pyannotePolicy: pol }, embedder: undefined, pyannote: py });
+  const [C1, C2, C3] = [await variant("always"), await variant("more-speakers"), await variant("when-merged")];
+  const C = { always: C1, "more-speakers": C2, "when-merged": C3 }[policy];
   const D = haveVoice ? await analyzeSpeakers({ normalized, wavPath, references: references.get(d), config, embedder, pyannote: py }) : null;
   let absent = null;
   if (D) {
@@ -120,8 +123,9 @@ for (const name of names) {
   }
   const st = (r, sp) => (sp === null || !r ? "none" : r.identification.get(sp)?.status ?? "n/a");
   const mB = measure(B.normalized), mC = measure(C.normalized), mD = D ? measure(D.normalized) : null;
+  const mC1 = measure(C1.normalized), mC2 = measure(C2.normalized), mC3 = measure(C3.normalized);
   rows.push({
-    name, sib: sibling(d, p), dg: normalized.speakerIndices.length, A: A.m, B: mB, C: mC, srcB: B.source, srcC: C.source, warnC: C.warnings.map((w) => w.code),
+    name, sib: sibling(d, p), dg: normalized.speakerIndices.length, A: A.m, B: mB, C: mC, C1: mC1, C2: mC2, C3: mC3, srcB: B.source, srcC: C.source, warnC: C.warnings.map((w) => w.code),
     pyMs: diar.processingTimeMs, pySpeakers: diar.speakers.length, wall: Date.now() - t0,
     docStatus: D ? st(D, mD.owner.D) : null, patStatus: D ? st(D, mD.owner.P) : null,
     mergedD: D ? mD.owner.D !== null && mD.owner.D === mD.owner.P : null,
@@ -134,8 +138,8 @@ for (const name of names) {
 const pct = (n, t) => (t ? `${((n / t) * 100).toFixed(1)}%` : "n/a");
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const fmt = (x, digits = 1) => `${(x * 100).toFixed(digits)}%`;
-console.log(`\nrecordings: ${rows.length} (truth: always 2 speakers: D and P) | Deepgram found <=1 speaker in ${rows.filter((r) => r.dg <= 1).length} | policy=${policy}`);
-const cfgs = { "A Deepgram alone": (r) => r.A, "B + independent detector": (r) => r.B, "C + pyannote Community-1": (r) => r.C };
+console.log(`\nrecordings: ${rows.length} (truth: always 2 speakers: D and P) | Deepgram found <=1 speaker in ${rows.filter((r) => r.dg <= 1).length} | doctor-matching policy (D)=${policy}`);
+const cfgs = { "A Deepgram alone": (r) => r.A, ...(flag("skip-independent") ? {} : { "B + independent detector": (r) => r.B }), "C1 pyannote: always": (r) => r.C1, "C2 pyannote: more-speakers": (r) => r.C2, "C3 pyannote: when-merged": (r) => r.C3 };
 function table(label, rs) {
   if (!rs.length) return;
   console.log(`\n${label}  (n=${rs.length})`);
@@ -154,7 +158,9 @@ table("Deepgram found >2", rows.filter((r) => r.dg > 2));
 table("Same-voice sibling pairs (acoustically identical: no model can separate them)", rows.filter((r) => r.sib));
 table("Non-sibling pairs", rows.filter((r) => !r.sib));
 const rec = rows.filter((r) => r.dg <= 1);
-console.log(`\nMERGE RECOVERY: Deepgram merged ${rec.length}; recovered (found 2) by B: ${rec.filter((r) => r.B.speakers === 2).length}, by C: ${rec.filter((r) => r.C.speakers === 2).length}`);
+console.log(`\nMERGE RECOVERY: Deepgram merged ${rec.length}; recovered (found 2) by B: ${rec.filter((r) => r.B.speakers === 2).length}, by C1 always: ${rec.filter((r) => r.C1.speakers === 2).length}, C2 more-speakers: ${rec.filter((r) => r.C2.speakers === 2).length}, C3 when-merged: ${rec.filter((r) => r.C3.speakers === 2).length}`);
+const worse = (k) => rows.filter((r) => r.dg === 2 && r[k].speakers !== 2).length;
+console.log(`RECORDINGS WHERE DEEPGRAM WAS RIGHT (found 2) AND THE POLICY BROKE IT (no longer 2): C1 always ${worse("C1")}, C2 more-speakers ${worse("C2")}, C3 when-merged ${worse("C3")}  of ${rows.filter((r) => r.dg === 2).length}`);
 console.log(`words preserved (count) in C: ${rows.filter((r) => r.wordsKept).length}/${rows.length}`);
 console.log(`pyannote speakers found vs 2: ${[1, 2, 3, 4].map((k) => `${k}:${rows.filter((r) => Math.min(r.pySpeakers, 4) === k).length}`).join("  ")} (4 = four or more)`);
 console.log(`pyannote processing time per recording (~21 s audio): mean ${(avg(rows.map((r) => r.pyMs)) / 1000).toFixed(1)} s`);
@@ -168,4 +174,4 @@ if (rows[0]?.docStatus !== null) {
   console.log(`   DOCTOR ABSENT control (a different doctor's profile): matched in ${rows.filter((r) => r.absentAnyMatched).length}/${rows.length}`);
 }
 const bad = rows.filter((r) => r.C.speakers !== 2).slice(0, 14);
-console.log("\nrecordings where C did not find exactly 2:", bad.map((r) => `${r.name}[dg${r.dg},B${r.B.speakers},C${r.C.speakers}${r.sib ? ",sibling" : ""}]`).join("  "));
+console.log(`\nrecordings where the chosen policy (${policy}) did not find exactly 2:`, bad.map((r) => `${r.name}[dg${r.dg},B${r.B.speakers},C${r.C.speakers}${r.sib ? ",sibling" : ""}]`).join("  "));

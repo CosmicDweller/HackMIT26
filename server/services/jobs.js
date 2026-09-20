@@ -7,7 +7,7 @@ import { AppError, notFound } from "../lib/errors.js";
 import { alignSegments } from "./align.js";
 import { DeepgramError, deepgramConfigured, minorSpeakers, normalizeDeepgramResponse, requestDeepgram } from "./deepgram.js";
 import { makeWorkDir, prepareRecording, RecordingError, toWav } from "./recording.js";
-import { analyzeSpeakers } from "./voice/analysis.js";
+import { analyzeSpeakers, pyannoteWanted } from "./voice/analysis.js";
 
 // ---------------------------------------------------------------------------------------------
 // Persistent transcription jobs.
@@ -61,7 +61,7 @@ const TERMINAL = new Set(["completed", "failed"]);
 const sha256 = (value) => createHash("sha256").update(value).digest();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createJobManager({ config, store, pipeline, voice = null, embedder = null, pyannote = null, logger = console }) {
+export function createJobManager({ config, store, pipeline, voice = null, embedder = null, pyannote = null, soap = null, logger = console }) {
   const events = new EventEmitter();
   events.setMaxListeners(0);
   const queue = [];
@@ -172,7 +172,7 @@ export function createJobManager({ config, store, pipeline, voice = null, embedd
     const voiceOn = Boolean(voice && embedder && config.voiceEnabled);
     let usePyannote = false;
     try {
-      usePyannote = Boolean(pyannote) && config.pyannoteEnabled && (config.pyannotePolicy === "always" || dgSpeakers <= 1) && (await pyannote.available());
+      usePyannote = Boolean(pyannote) && config.pyannoteEnabled && pyannoteWanted(config, dgSpeakers) && (await pyannote.available());
     } catch { /* not available */ }
     if (!voiceOn && !usePyannote) return null;
     try {
@@ -218,7 +218,21 @@ export function createJobManager({ config, store, pipeline, voice = null, embedd
     const transcription = store.completeJob(job.owner_id, job.id, { durationSeconds, ...prepared });
     await removeAudio(job);
     finish(job.id);
+    startSoap(job.owner_id, transcription.id);
     return transcription;
+  }
+
+  /**
+   * Begin drafting the SOAP note, once, from the transcript that was just STORED (speakers, corrections and all), never from the
+   * provider's raw response. It runs in the background: the transcription result is returned immediately and a drafting failure
+   * can never damage or delay the transcript. `createIfAbsent` claims the note in a transaction, so a duplicate completion event
+   * (a retry, a late callback) finds the slot taken and starts nothing.
+   */
+  function startSoap(ownerId, transcriptionId) {
+    if (!soap || !config.soapAutoGenerate || !soap.enabled()) return;
+    Promise.resolve()
+      .then(() => soap.createIfAbsent(ownerId, transcriptionId))
+      .catch((error) => logger.error(`soap generation not started: ${error?.code ?? error?.name ?? "error"}`)); // class only
   }
 
   // ---- running a job -------------------------------------------------------------------------

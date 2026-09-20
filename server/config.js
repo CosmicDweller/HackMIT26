@@ -102,8 +102,28 @@ export function loadConfig(env = process.env) {
     pyannoteTimeoutMinMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MIN_MS", 120_000),
     pyannoteTimeoutFactor: Number.parseFloat(env.PYANNOTE_TIMEOUT_FACTOR ?? "") || 1,
     pyannoteTimeoutMaxMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MAX_MS", 60 * 60_000),
-    // "always": speakers come from pyannote whenever it runs. "when-merged": only when Deepgram found at most one speaker.
-    pyannotePolicy: env.PYANNOTE_POLICY === "when-merged" ? "when-merged" : "always",
+    // How pyannote's speakers are used. Measured on 162 synthetic two-person recordings (docs/VOICE_EVALUATION.md):
+    //   "more-speakers" (default) pyannote runs, but replaces Deepgram's labels only when it heard MORE speakers. Recovered 5 of 11
+    //                             Deepgram merges, broke none of the 151 Deepgram got right, no false splits.
+    //   "when-merged"             pyannote runs only when Deepgram found at most one speaker. Identical results on this set; cheaper,
+    //                             but cannot catch a third speaker Deepgram missed.
+    //   "always"                  pyannote's labels always win. MEASURED WORSE: it merged 32 of the 151 correct recordings
+    //                             (count correct 93.2% -> 76.5%). Kept for experiments; do not use it as a default.
+    pyannotePolicy: ["always", "more-speakers", "when-merged"].includes(env.PYANNOTE_POLICY) ? env.PYANNOTE_POLICY : "more-speakers",
+    // SOAP notes (Google Gemini). Only the backend talks to Gemini; the key never reaches the browser and is never logged.
+    soapEnabled: env.SOAP_ENABLED !== "false",
+    soapProvider: env.SOAP_PROVIDER ?? "gemini",
+    soapModel: env.SOAP_MODEL ?? "gemini-2.5-flash",
+    geminiApiKey: env.GEMINI_API_KEY ?? "",
+    soapDefaultTemplate: env.SOAP_DEFAULT_TEMPLATE ?? "primary-care-standard",
+    // Drafting starts by itself once a transcript is stored. Set false to require an explicit POST .../soap.
+    soapAutoGenerate: env.SOAP_AUTO_GENERATE !== "false",
+    soapMaxConcurrent: intFromEnv(env, "SOAP_MAX_CONCURRENT", 1), // free tier: one request at a time
+    soapMaxRetries: intFromEnv(env, "SOAP_MAX_RETRIES", 2), // only for retryable classes (rate limit, timeout, 5xx)
+    soapRetryBaseMs: intFromEnv(env, "SOAP_RETRY_BASE_MS", 2000),
+    soapTimeoutMs: intFromEnv(env, "SOAP_TIMEOUT_MS", 90_000),
+    soapTemperature: Number.parseFloat(env.SOAP_TEMPERATURE ?? "") || 0.1, // documentation, not prose
+    soapMaxOutputTokens: intFromEnv(env, "SOAP_MAX_OUTPUT_TOKENS", 8192),
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),
   };
 }

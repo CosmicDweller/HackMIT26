@@ -273,6 +273,31 @@ describe("failures and policy", () => {
     assert.equal(used.source, "pyannote");
   });
 
+  test("policy 'more-speakers': pyannote's labels replace Deepgram's only when pyannote heard MORE speakers", async () => {
+    const cfg = { ...CONFIG, pyannotePolicy: "more-speakers" };
+    // Deepgram merged two voices, pyannote separates them: adopted
+    const merged = await analyze(conversation(TURNS, () => 0), { pyannote: fakePyannote(), config: cfg });
+    assert.equal(merged.source, "pyannote");
+    assert.deepEqual(merged.normalized.speakerIndices, [0, 1]);
+    assert.equal(merged.internal.pyannote.used, true);
+    assert.ok(merged.warnings.some((w) => w.code === "SPEAKERS_FROM_PYANNOTE"));
+    // Deepgram found two (correctly), pyannote merged them into one: Deepgram's split is kept, pyannote's turns are only diagnostics
+    const twoTurns = TURNS.map((t) => ({ ...t, who: "D" }));
+    const kept = await analyze(conversation(TURNS, (i) => i % 2), { pyannote: fakePyannote({ turns: twoTurns }), config: cfg });
+    assert.equal(kept.source, "deepgram");
+    assert.deepEqual(kept.normalized.speakerIndices, [0, 1]);
+    assert.equal(kept.internal.pyannote.used, false);
+    assert.ok(!kept.warnings.some((w) => w.code === "SPEAKERS_FROM_PYANNOTE"));
+    // both found two: Deepgram's labels stand
+    const same = await analyze(conversation(TURNS, (i) => i % 2), { pyannote: fakePyannote(), config: cfg });
+    assert.equal(same.source, "deepgram");
+    // pyannote heard three where Deepgram found two: adopted (and flagged for review)
+    const threeTurns = ["D", "P", "N", "D", "P", "N"].map((who, i) => ({ who, at: i * 7, seconds: 6 }));
+    const more = await analyze(conversation(threeTurns, (i) => i % 2), { pyannote: fakePyannote({ turns: threeTurns }), embedder: scriptedEmbedder(threeTurns), config: cfg });
+    assert.equal(more.source, "pyannote");
+    assert.deepEqual(more.normalized.speakerIndices, [0, 1, 2]);
+  });
+
   test("an unavailable pyannote (not installed) is skipped silently and the previous behaviour is unchanged", async () => {
     const conv = conversation(TURNS, (i) => i % 2);
     const calls = [];
