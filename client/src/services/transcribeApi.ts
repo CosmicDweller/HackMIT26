@@ -1,3 +1,4 @@
+import { apiUrl } from "@/services/apiUrl";
 import type { TranscribeError, TranscribeSuccess, VoiceEnrollmentProblem } from "@/types";
 
 export class TranscribeApiError extends Error {
@@ -23,7 +24,7 @@ export async function transcribeAudio(
   let response: Response;
   try {
     // Do not set Content-Type manually — the browser sets the multipart boundary.
-    response = await fetch("/api/transcribe", {
+    response = await fetch(apiUrl("/api/transcribe"), {
       method: "POST",
       body: formData,
     });
@@ -50,7 +51,7 @@ export async function transcribeAudio(
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch("/api/health");
+    const response = await fetch(apiUrl("/api/health"));
     if (!response.ok) return false;
     const payload = await response.json();
     return payload?.status === "ok";

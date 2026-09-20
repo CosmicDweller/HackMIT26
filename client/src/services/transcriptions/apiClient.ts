@@ -1,3 +1,4 @@
+import { apiUrl } from "@/services/apiUrl";
 import { authProvider } from "@/services/auth";
 import { TranscribeApiError } from "@/services/transcribeApi";
 
@@ -41,7 +42,7 @@ async function parseJsonOrThrow<T>(response: Response): Promise<T> {
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...init,
       headers: { ...(await authHeaders()), ...init.headers },
     });
@@ -58,7 +59,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 export async function apiRequestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...init,
       headers: { ...(await authHeaders()), ...init.headers },
     });
