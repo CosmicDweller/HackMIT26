@@ -2,7 +2,7 @@
 // Most of these are negative tests, because the dangerous failure is a plausible sentence nobody said.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { numberedTranscript } from "../services/soap/prompt.js";
+import { numberedTranscript, uncertaintyNotice } from "../services/soap/prompt.js";
 import { validateFacts, validateNote } from "../services/soap/validate.js";
 import { goodNote, headacheTranscript } from "./soap-fixtures.js";
 
@@ -300,11 +300,26 @@ describe("stage 1 fact validation", () => {
 });
 
 describe("what the model is told", () => {
-  test("unconfirmed speakers are shown as UNIDENTIFIED, never as the clinician", () => {
-    const transcription = { ...transcript(), ...headacheTranscript({ roles: "unassigned" }) };
-    const { text } = numberedTranscript(transcription);
+  test("an unconfirmed speaker with NO voice match is UNIDENTIFIED, never presented as the clinician", () => {
+    const data = headacheTranscript({ roles: "unassigned" });
+    // no voice identification at all (the doctor never enrolled, or the model could not decide)
+    data.speakers = data.speakers.map((speaker) => ({ ...speaker, identificationStatus: "unavailable", suggestedRole: null }));
+    const { text } = numberedTranscript({ ...transcript(), ...data });
     assert.ok(text.includes("UNIDENTIFIED"), text.slice(0, 200));
-    assert.ok(!text.includes("CLINICIAN"), "an unconfirmed speaker must not be presented as the clinician");
+    assert.ok(!text.includes("CLINICIAN"), "an unidentified speaker must not be presented as the clinician");
+    const notice = uncertaintyNotice({ ...transcript(), ...data });
+    assert.match(notice, /Do not assume an unidentified speaker is the clinician/);
+  });
+
+  test("an unconfirmed speaker the VOICE MATCHED is offered as a suggestion, marked unconfirmed, with an explicit instruction to flag it", () => {
+    const data = headacheTranscript({ roles: "unassigned" }); // speaker_0 is identificationStatus "matched", suggestedRole "doctor"
+    const transcription = { ...transcript(), ...data };
+    const { text } = numberedTranscript(transcription);
+    assert.ok(text.includes("PROBABLY THE CLINICIAN, UNCONFIRMED"), text.slice(0, 200));
+    assert.ok(!/^\[\d+\] CLINICIAN:/m.test(text), "it is never shown as a plain confirmed CLINICIAN");
+    const notice = uncertaintyNotice(transcription);
+    assert.match(notice, /voice matching suggests it, but nobody has confirmed it/);
+    assert.match(notice, /MUST raise an uncertain_speaker flag/);
   });
 
   test("confirmed roles are shown, and a segment with no speaker is UNKNOWN SPEAKER", () => {
