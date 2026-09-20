@@ -1,0 +1,9 @@
+# pyannote Community-1 worker environment (server/.venv-diarization, Python 3.12, macOS arm64). Versions verified together on 2026-09-20:
+# `pip check` clean, pyannote imports, TorchCodec decodes with FFmpeg 9.0.2 (see README: DYLD_FALLBACK_LIBRARY_PATH), real inference run.
+# The direct dependencies are pinned; pip resolves the rest (a full `pip freeze` is recorded in diarization/README.md).
+pyannote.audio==4.0.7
+torch==2.14.0
+torchaudio==2.11.0
+torchcodec==0.16.0
+numpy==2.5.3
+huggingface_hub==1.32.0

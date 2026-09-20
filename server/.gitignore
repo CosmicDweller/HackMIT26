@@ -15,6 +15,7 @@ tmp/
 
 # Diarization: Python venv and downloaded models
 diarization/.venv/
+.venv-diarization/
 diarization/models/
 __pycache__/
 

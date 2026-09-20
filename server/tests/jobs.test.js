@@ -495,7 +495,7 @@ describe("security and ownership", () => {
   });
 });
 
-describe("recordings: size, length and the two-hour boundary", () => {
+describe("recordings: size, length and the 30-minute limit", () => {
   test("the upload size limit is enforced (413) and nothing is stored", async () => {
     const { createJob, tokenFor, uploads } = await setup({ maxRecordingBytes: 100_000 });
     expectError(await createJob(await tokenFor("doctor-a")), 413, "FILE_TOO_LARGE");
@@ -519,26 +519,48 @@ describe("recordings: size, length and the two-hour boundary", () => {
     assert.equal(done.status, "completed");
   });
 
-  test("TWO-HOUR BOUNDARY: a real 7200 s recording is accepted with the default limits, 7205 s is rejected", async () => {
-    const { post, finished, tokenFor, stub, root, store } = await setup({ deepgramSyncMaxSeconds: 7200 });
+  test("THIRTY-MINUTE LIMIT: a real 1800 s recording is accepted with the default limits, 1805 s is rejected", async () => {
+    const { post, finished, tokenFor, stub, root, store } = await setup();
     const token = await tokenFor("doctor-a");
-    const exact = path.join(root, "two-hours.ogg");
-    const over = path.join(root, "two-hours-five.ogg");
-    makeTone(exact, 7200, ["-c:a", "libopus", "-b:a", "16k"]);
-    makeTone(over, 7205, ["-c:a", "libopus", "-b:a", "16k"]);
+    const exact = path.join(root, "thirty-minutes.ogg");
+    const over = path.join(root, "thirty-minutes-five.ogg");
+    makeTone(exact, 1800, ["-c:a", "libopus", "-b:a", "16k"]);
+    makeTone(over, 1805, ["-c:a", "libopus", "-b:a", "16k"]);
 
     const ok = await post(token, "/api/transcription-jobs", await readFixtureFile(exact), {}, "long.ogg");
     const okDone = await finished(token, ok.body.jobId, 120_000);
     assert.equal(okDone.status, "completed", JSON.stringify(okDone.error));
     const job = store.jobById(ok.body.jobId);
-    assert.ok(Math.abs(job.duration_seconds - 7200) < 1, `decoded duration ${job.duration_seconds}`);
+    assert.ok(Math.abs(job.duration_seconds - 1800) < 1, `decoded duration ${job.duration_seconds}`);
     assert.equal(stub.requests.length, 1);
-    assert.ok(stub.requests[0].bytes > 1_000_000, "a large, real FLAC was streamed");
+    assert.ok(stub.requests[0].bytes > 500_000, "a large, real FLAC was streamed");
 
     const tooLong = await post(token, "/api/transcription-jobs", await readFixtureFile(over), {}, "longer.ogg");
     const tooLongDone = await finished(token, tooLong.body.jobId, 120_000);
     assert.equal(tooLongDone.error.code, "RECORDING_TOO_LONG");
     assert.equal(stub.requests.length, 1, "the over-length recording was never sent");
+  });
+
+  test("the old two-hour limit is gone: a real 7200 s recording is now rejected before anything is sent", async () => {
+    const { post, finished, tokenFor, stub, uploads, root } = await setup();
+    const token = await tokenFor("doctor-a");
+    const twoHours = path.join(root, "two-hours.ogg");
+    makeTone(twoHours, 7200, ["-c:a", "libopus", "-b:a", "16k"]);
+    const created = await post(token, "/api/transcription-jobs", await readFixtureFile(twoHours), {}, "two-hours.ogg");
+    const done = await finished(token, created.body.jobId, 120_000);
+    assert.equal(done.error.code, "RECORDING_TOO_LONG");
+    assert.match(done.error.message, /30 minutes/, "the doctor is told the limit and what to do");
+    assert.equal(stub.requests.length, 0);
+    assert.deepEqual(await uploads(), [], "the rejected recording is not kept");
+  });
+
+  test("the default configuration is 30 minutes per recording, with no callback needed at that length", async () => {
+    const { loadConfig } = await import("../config.js");
+    const c = loadConfig({});
+    assert.equal(c.maxRecordingSeconds, 1800);
+    assert.equal(c.deepgramSyncMaxSeconds, 1800);
+    assert.equal(c.maxRecordingBytes, 512 * 1024 * 1024);
+    assert.equal(loadConfig({ MAX_RECORDING_SECONDS: "600" }).maxRecordingSeconds, 600, "still adjustable by the operator");
   });
 
   test("a recording over the synchronous limit without a callback is rejected before any audio is sent", async () => {

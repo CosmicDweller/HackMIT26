@@ -1,0 +1,159 @@
+{
+ "durationMs": 146326,
+ "turns": [
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "What brings you in today?",
+   "startMs": 1050,
+   "endMs": 2549
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I have had a really bad headache for the past three days.",
+   "startMs": 3199,
+   "endMs": 6753
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Where do you feel the pain?",
+   "startMs": 7403,
+   "endMs": 8937
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "Mostly on the right side, behind my eye and temple. It feels throbbing and pulsing.",
+   "startMs": 9587,
+   "endMs": 15625
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "How severe is it?",
+   "startMs": 16275,
+   "endMs": 17535
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "Around 7 or 8 out of 10. Bright light and loud noises make it worse. I had to leave work early because fluorescent lights made it intolerable.",
+   "startMs": 18185,
+   "endMs": 29146
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Any nausea, vomiting, or vision changes?",
+   "startMs": 29796,
+   "endMs": 33338
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I felt nauseous yesterday, but I did not vomit. No spots, flashes, or other vision changes.",
+   "startMs": 33988,
+   "endMs": 41954
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Have you taken anything?",
+   "startMs": 42604,
+   "endMs": 44189
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I took ibuprofen 400 milligrams yesterday evening. It reduced the pain to about a 5, but it returned overnight.",
+   "startMs": 44839,
+   "endMs": 54036
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Have you had similar headaches before?",
+   "startMs": 54686,
+   "endMs": 56922
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "Only occasional mild tension headaches, nothing this intense.",
+   "startMs": 57572,
+   "endMs": 61858
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Any chronic conditions, daily medications, or medication allergies?",
+   "startMs": 62508,
+   "endMs": 68013
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "No chronic conditions. No regular daily medications. No known drug allergies.",
+   "startMs": 68663,
+   "endMs": 75456
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Your blood pressure is 122 over 78, heart rate is 72, temperature is 98.6 degrees Fahrenheit, and respiratory rate is 16.",
+   "startMs": 76106,
+   "endMs": 88681
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Cranial nerves 2 through 12 are intact. Your neck is supple with full range of motion. There is no tenderness over the temporal arteries or sinus areas. Neurologically, everything looks normal.",
+   "startMs": 89331,
+   "endMs": 103971
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "What do you think it is?",
+   "startMs": 104621,
+   "endMs": 106166
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "This presents classic features of an acute migraine without aura.",
+   "startMs": 106816,
+   "endMs": 111049
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "I am prescribing sumatriptan 50 milligrams at the onset of a migraine attack. If it does not resolve within two hours, you can take a second dose, up to a maximum of 200 milligrams in 24 hours.",
+   "startMs": 111699,
+   "endMs": 126863
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Rest in a quiet, dark room and stay well hydrated.",
+   "startMs": 127513,
+   "endMs": 131218
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "If pain worsens significantly or you develop new neurological symptoms such as weakness, numbness, or vision loss, seek urgent care or emergency evaluation immediately.",
+   "startMs": 131868,
+   "endMs": 144315
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "Thank you.",
+   "startMs": 144965,
+   "endMs": 145726
+  }
+ ]
+}
