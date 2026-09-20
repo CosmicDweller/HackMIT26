@@ -41,6 +41,12 @@ export function toPublic(record: StoredTranscription): Transcription {
   return structuredClone(rest);
 }
 
+/** Bumps a transcription's revision after a speaker/segment edit, so a SOAP note
+ * generated from an earlier revision can detect that its source has changed. */
+export function bumpRevision(record: StoredTranscription): void {
+  record.revision = (record.revision ?? 1) + 1;
+}
+
 export async function requireOwned(id: string, userId: string): Promise<StoredTranscription> {
   const record = store.get(id);
   if (!record || record.ownerId !== userId) {
@@ -79,8 +85,9 @@ export function createMockTranscription(ownerId: string): Transcription {
   const transcription: Transcription = {
     id,
     text: fixtureFullText(),
-    durationSeconds: 38.5,
+    durationSeconds: 100,
     reviewStatus: "needs_review",
+    revision: 1,
     createdAt: new Date().toISOString(),
     engine: "local",
     speakers,

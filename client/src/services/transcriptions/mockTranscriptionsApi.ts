@@ -1,6 +1,7 @@
 import { TranscribeApiError } from "@/services/transcribeApi";
 import type { TranscriptionsApi } from "@/services/transcriptions/transcriptionsApiTypes";
 import {
+  bumpRevision,
   createMockTranscription,
   delay,
   requireOwned,
@@ -8,6 +9,7 @@ import {
   store,
   toPublic,
 } from "@/services/transcriptions/mockTranscriptionsStore";
+import { autoStartSoapGeneration } from "@/services/soap/mockSoapStore";
 
 /**
  * MOCK transcriptions backend, matching the agreed contract (docs/API_CONTRACT.md
@@ -21,7 +23,9 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       throw new TranscribeApiError({ error: "The audio is empty.", code: "INVALID_AUDIO" });
     }
     await delay(undefined, 1800);
-    return createMockTranscription(ownerId);
+    const transcription = createMockTranscription(ownerId);
+    autoStartSoapGeneration(transcription.id, ownerId);
+    return transcription;
   },
 
   async list() {
@@ -60,6 +64,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
       throw new TranscribeApiError({ error: "Speaker not found.", code: "NOT_FOUND" });
     }
     speaker.role = role;
+    bumpRevision(record);
     return toPublic(record);
   },
 
@@ -75,6 +80,7 @@ export const mockTranscriptionsApi: TranscriptionsApi = {
     segment.speakerId = patch.speakerId;
     segment.needsReview = false;
     record.text = record.segments.map((s) => s.text).join(" ");
+    bumpRevision(record);
     return toPublic(record);
   },
 

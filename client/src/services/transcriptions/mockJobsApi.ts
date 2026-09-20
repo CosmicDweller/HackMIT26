@@ -1,5 +1,6 @@
 import { TranscribeApiError } from "@/services/transcribeApi";
 import { createMockTranscription, requireUserId } from "@/services/transcriptions/mockTranscriptionsStore";
+import { autoStartSoapGeneration } from "@/services/soap/mockSoapStore";
 import type { JobsApi } from "@/services/transcriptions/jobsApiTypes";
 import type { JobStatus, TranscriptionJob } from "@/types";
 
@@ -58,6 +59,7 @@ async function runJob(job: StoredJob, audioEmpty: boolean) {
   }
 
   const transcription = createMockTranscription(job.ownerId);
+  autoStartSoapGeneration(transcription.id, job.ownerId);
   job.status = "completed";
   job.transcriptionId = transcription.id;
 }

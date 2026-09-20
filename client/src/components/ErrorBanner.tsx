@@ -13,6 +13,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   NOT_FOUND: "Not found",
   INVALID_REQUEST: "Invalid request",
   SERVER_ERROR: "Server error",
+  CONFLICT: "Changed elsewhere",
   NETWORK_ERROR: "Connection problem",
   UNSUPPORTED_FILE: "Unsupported file",
   // Job error codes (Contract v3)

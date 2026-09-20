@@ -14,6 +14,13 @@ interface TranscriptSegmentRowProps {
   isSaving: (key: string) => boolean;
   onSave: (segmentId: string, patch: { text: string; speakerId: string | null }) => void;
   onDirtyChange?: (segmentId: string, dirty: boolean) => void;
+  /** True briefly after a SOAP claim citing this segment is clicked. */
+  highlighted?: boolean;
+}
+
+/** Stable DOM anchor for scrolling to a segment from a SOAP claim's citation. */
+export function segmentAnchorId(segmentId: string): string {
+  return `transcript-segment-${segmentId}`;
 }
 
 export function TranscriptSegmentRow({
@@ -23,6 +30,7 @@ export function TranscriptSegmentRow({
   isSaving,
   onSave,
   onDirtyChange,
+  highlighted,
 }: TranscriptSegmentRowProps) {
   const [draftText, setDraftText] = useState(segment.text);
   const [justSaved, setJustSaved] = useState(false);
@@ -63,9 +71,14 @@ export function TranscriptSegmentRow({
 
   return (
     <div
+      id={segmentAnchorId(segment.id)}
       className={cn(
-        "space-y-1.5 rounded-lg border p-3",
-        segment.needsReview ? "border-amber-300 dark:border-amber-800" : "border-border",
+        "space-y-1.5 rounded-lg border p-3 transition-colors duration-500",
+        highlighted
+          ? "border-primary ring-2 ring-primary/40"
+          : segment.needsReview
+            ? "border-amber-300 dark:border-amber-800"
+            : "border-border",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">

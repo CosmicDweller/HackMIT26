@@ -53,3 +53,31 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
   return parseJsonOrThrow<T>(response);
 }
+
+/** Like apiRequest, but for binary responses (e.g. PDF export) instead of JSON. */
+export async function apiRequestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: { ...(await authHeaders()), ...init.headers },
+    });
+  } catch {
+    throw new TranscribeApiError({
+      error: "Could not reach the server.",
+      code: "NETWORK_ERROR",
+    });
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const errorPayload =
+      payload && typeof payload.error === "string" && typeof payload.code === "string"
+        ? payload
+        : { error: "Request failed.", code: "SERVER_ERROR" };
+    if (errorPayload.code === "UNAUTHENTICATED") {
+      await authProvider.signOut();
+    }
+    throw new TranscribeApiError(errorPayload);
+  }
+  return response.blob();
+}

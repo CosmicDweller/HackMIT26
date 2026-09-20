@@ -29,7 +29,9 @@ export type ApiErrorCode =
   | "UNAUTHENTICATED"
   | "NOT_FOUND"
   | "INVALID_REQUEST"
-  | "SERVER_ERROR";
+  | "SERVER_ERROR"
+  /** 409 — a PATCH/approve was based on a stale revision (proposed, additive). */
+  | "CONFLICT";
 
 /** Client-only error codes for failures that never reach the API. */
 export type ClientErrorCode = "NETWORK_ERROR" | "UNSUPPORTED_FILE";
@@ -43,3 +45,4 @@ export interface TranscribeError {
 
 export * from "@/types/auth";
 export * from "@/types/transcription";
+export * from "@/types/soap";

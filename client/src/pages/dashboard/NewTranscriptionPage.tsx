@@ -5,6 +5,7 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { JobProgress } from "@/components/JobProgress";
 import { ModeToggle } from "@/components/ModeToggle";
 import { RecordPanel } from "@/components/RecordPanel";
+import { SoapTemplatePicker } from "@/components/soap/SoapTemplatePicker";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UploadPanel } from "@/components/UploadPanel";
 import { useAudioCapture } from "@/hooks/useAudioCapture";
@@ -105,6 +106,12 @@ export function NewTranscriptionPage() {
                 </>
               )}
             </p>
+          )}
+
+          {(appState === "idle" || appState === "recording" || appState === "audio-ready") && (
+            <div className="mb-4">
+              <SoapTemplatePicker />
+            </div>
           )}
 
           {appState === "error" && (

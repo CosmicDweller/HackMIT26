@@ -70,6 +70,13 @@ export interface Transcription {
    * Absent when the backend doesn't support voice identification yet.
    */
   voiceIdentificationStatus?: "completed" | "unavailable" | "failed";
+  /**
+   * Increments on every segment/speaker edit (proposed, additive — see the SOAP
+   * coordination comment on issue #3). Lets a SOAP note detect that its source
+   * transcript has changed since generation via `sourceTranscriptRevision`.
+   * Absent when the backend doesn't support this yet; treated as always-fresh.
+   */
+  revision?: number;
 }
 
 /** Metadata-only shape returned by the list endpoint. */

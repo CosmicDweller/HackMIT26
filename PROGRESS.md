@@ -1,9 +1,77 @@
 # Progress
 
 ## Current milestone
-**Recording pause/resume + a live audio-level graph, added to both the
-consultation recorder and voice-profile sample recorder.** Pure client-side
-UX improvement, no backend or contract changes involved.
+**SOAP note generation, review, and export — built client-side against a
+mock, coordination proposal posted on issue #3.** No backend support exists
+for this yet, same situation as voice enrollment: the client is ahead and
+waiting on the backend agent (and on a hosted AI provider decision, which
+is entirely backend-side).
+
+## SOAP notes — client built, mock-only, awaiting backend
+Proposed contract posted to issue #3: the six endpoints from the brief
+confirmed as-is, plus one addition (`GET/PATCH /api/me/soap-preference`
+for the account's default template — not in the original endpoint list but
+required by "persist this before the consultation starts"), plus two
+additive fields (`Transcription.revision`, a `CONFLICT` error code). Runs
+against `services/soap/mockSoapApi.ts` (`VITE_USE_MOCK_SOAP`, defaults to
+mock) and is real-backend-safe — nothing above changes behavior against the
+actual server today.
+
+- **Extends the existing transcript detail page** (not a new page): SOAP
+  note is now the main content; the existing speaker-mapping/segment editor
+  moved into a collapsible "Original transcript" panel (still fully
+  functional — mark-reviewed/export/delete for the raw transcript are
+  untouched) that auto-expands and scrolls-and-highlights the cited segment
+  when a SOAP statement is clicked.
+- **Generation**: fetched once per page load (GET, then POST only as
+  idempotent recovery if the GET 404s), polls only while
+  `status: "processing"`, shows the real stage (`queued` /`extracting`/
+  `drafting`/`validating`) — no fabricated percentage, no regeneration.
+  Guarded against React 18 StrictMode's dev-only double-invoke of effects
+  with a persistent ref, separate from a per-render "is mounted" ref (the
+  first version of this had a real bug here — the double-invoke's cleanup
+  discarded the one real fetch's result — caught by testing in-browser
+  before this ever reached the backend agent).
+- **Editor**: four sections, each a view of clickable claims (with a
+  pencil-toggle into a plain textarea to edit the raw text — no rich-text
+  editor). Editing a section flags every existing claim in it for
+  re-verification rather than pretending a stale citation still applies.
+  Empty sections render blank, never filled in with a guess.
+- **Save/Approve/Export**: Save Draft sends the full `sections` + revision;
+  a 409 shows a conflict banner with "discard my edits" or "keep editing
+  and retry with the fresh revision" (never silently overwrites). Approve
+  auto-saves first, shows a confirmation with the outstanding review-flag
+  count, and is blocked while the source transcript's revision has moved
+  past what the note was generated from (a stale-source warning, not a
+  silent auto-regenerate). Export (PDF/TXT/clipboard) is disabled until
+  approved and pulls from the same `soap.export()` call the real backend
+  will serve — the mock's PDF is a small hand-written single/multi-page
+  writer (`lib/simplePdf.ts`, no new dependency; the real backend generates
+  the actual PDF, this only exists to demo the flow).
+- **Grounding fixture**: rebuilt the shared mock transcript
+  (`lib/transcriptionFixtures.ts`) around the corrected migraine
+  consultation from the brief, so every SOAP claim's `sourceSegmentIds`
+  cites a real, matching segment — clicking "BP 122/78" scrolls to the
+  nurse's actual vitals line. Kept the 3-speaker minor-speaker-warning demo
+  (brief nurse interjection). One claim (a blanket "neuro exam normal"
+  statement with no itemized findings) is deliberately flagged
+  `needsReview` to exercise that path honestly.
+- **Verified for real** in-browser: full flow end to end — upload → job
+  completes → SOAP auto-generates through its real stages → edit a section
+  → citations flag for review → save → approve (confirmed via an overridden
+  `window.confirm`, the same native-dialog limitation as the delete
+  button elsewhere in this app) → PDF/TXT/clipboard export all confirmed
+  correct via direct calls (PDF is a well-formed, openable file; TXT
+  contains the edited text with the right headings). Existing "Mark as
+  reviewed"/export/delete for the transcript itself confirmed still working
+  unchanged alongside the new feature.
+- **Not implemented**: nothing outside the brief's scope; template choice
+  is a control on the New Transcription page rather than duplicated in
+  Account settings (not explicitly required, kept minimal).
+
+## Previous milestone — recording pause/resume + live waveform
+Added to both the consultation recorder and voice-profile sample recorder.
+Pure client-side UX improvement, no backend or contract changes involved.
 
 ## Recording pause/resume + live waveform
 - `useAudioRecorder` gained a `"paused"` status plus `pause()`/`resume()`
@@ -196,8 +264,10 @@ With the client pointed at it for real:
 - Zero console errors at any step of the whole session.
 
 ## Remaining prioritized tasks
-1. Backend agreement on the voice-enrollment contract (issue #3 comment
-   posted) — the whole feature is mock-only until the endpoints exist.
+1. Backend agreement on the SOAP-notes contract and the voice-enrollment
+   contract (both proposals posted on issue #3) — both features are
+   mock-only until their endpoints exist. SOAP also needs a hosted-AI
+   provider decision, which is entirely backend-side.
 2. Get a `DEEPGRAM_API_KEY` to verify the actual Deepgram engine end to end
    (tested via the local fallback through the same job endpoints so far).
 3. Automated test suite (Playwright/Vitest) for the scenarios in the brief
@@ -218,33 +288,40 @@ With the client pointed at it for real:
 - Auth and the transcriptions API each sit behind their own
   provider-agnostic service + mock flag (`VITE_USE_MOCK_AUTH`,
   `VITE_USE_MOCK_TRANSCRIPTIONS`) — both now flipped to `false` locally
-  since the real backend is verified working. Voice profile follows the
-  same provider-agnostic + mock-flag pattern (`VITE_USE_MOCK_VOICE_PROFILE`,
-  currently mock-only since the backend doesn't have this yet).
+  since the real backend is verified working. Voice profile and SOAP notes
+  each follow the same provider-agnostic + mock-flag pattern
+  (`VITE_USE_MOCK_VOICE_PROFILE`, `VITE_USE_MOCK_SOAP`), both currently
+  mock-only since the backend doesn't have either yet.
 
 ## Known bugs and blockers
-- Voice enrollment has no backend support yet — mock-only, see above.
-  Everything else: no known bugs. Both mock flags can stay `false` for
-  local dev/demo as long as `server/` is running with models set up.
-  `server/.env` needs `DEEPGRAM_API_KEY` for the real Deepgram engine —
-  without it, set `STT_ENGINE=local` to use the whisper.cpp fallback (what
-  this session's testing used).
+- Voice enrollment and SOAP notes have no backend support yet — both
+  mock-only, see above. Everything else: no known bugs. Both mock flags
+  (auth/transcriptions) can stay `false` for local dev/demo as long as
+  `server/` is running with models set up. `server/.env` needs
+  `DEEPGRAM_API_KEY` for the real Deepgram engine — without it, set
+  `STT_ENGINE=local` to use the whisper.cpp fallback (what this session's
+  testing used).
 
 ## Test and deployment status
 - No automated tests on the client. Full manual pass against the real,
   merged v3 backend today (job creation, polling, completion, warnings,
   needsReview, resume-unfinished-job) plus earlier real-auth and v2 passes.
-  Voice enrollment verified against the mock only (enroll/get/delete round
-  trip, all account/dashboard/transcript display states) — see "Not
-  implemented" above for what live browser automation couldn't cover.
-  Lint (`oxlint`) and build (`tsc -b && vite build`) both pass. No
-  deployment yet.
+  Voice enrollment and SOAP notes each verified against their mocks only
+  (SOAP: full generate → edit → save → approve → export round trip,
+  including a real StrictMode double-invoke bug caught and fixed in this
+  session) — see each feature's "Not implemented"/"Not verified" notes
+  above for what live browser automation couldn't cover (mainly native
+  browser dialogs: mic permission prompts and `window.confirm`, the latter
+  worked around by overriding it in-page for testing, same technique used
+  for the transcript delete button previously). Lint (`oxlint`) and build
+  (`tsc -b && vite build`) both pass. No deployment yet.
 
 ## Next specific action
-Wait for the backend agent's response to the voice-enrollment proposal on
-issue #3; meanwhile get a Deepgram API key to verify the real engine, then
-decide on deployment: client to Vercel, backend to a machine that can run
-whisper.cpp/Deepgram + the diarization venv (per backend's tunnel plan).
+Wait for the backend agent's response to the SOAP-notes and voice-enrollment
+proposals on issue #3; meanwhile get a Deepgram API key to verify the real
+engine, then decide on deployment: client to Vercel, backend to a machine
+that can run whisper.cpp/Deepgram + the diarization venv (per backend's
+tunnel plan).
 
 ## Backend status (lz)
 - v1 (`/api/transcribe`, `/api/health`) and v2 (accounts, `/api/transcriptions*`) are merged on `main` and unchanged in shape.
