@@ -4,6 +4,10 @@ import { soap } from "@/services/soap/soapService";
 import type { SoapNote, SoapSections } from "@/types";
 
 const POLL_INTERVAL_MS = 2000;
+// A poll may fail transiently (a dropped connection, a restarting server), so a few failures in a row are worth riding out. Retrying
+// for ever is not: if the backend is down or unreachable the note never arrives, and the doctor is left watching a spinner that can
+// never resolve. After this many consecutive failures we say so instead.
+const MAX_POLL_FAILURES = 5;
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -18,6 +22,7 @@ export function useSoapNote(transcriptionId: string) {
   const [approveError, setApproveError] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollFailuresRef = useRef(0);
   // Which transcription we've already started a fetch/recovery for. Guards against a
   // duplicate generation from React 18 StrictMode's dev-only double-invoke of effects,
   // while still re-fetching when the id genuinely changes (a plain boolean would pin the
@@ -48,12 +53,20 @@ export function useSoapNote(transcriptionId: string) {
       try {
         const latest = await soap.get(id);
         if (!stillCurrent(id)) return;
+        pollFailuresRef.current = 0;
         if (latest) {
           setNote(latest);
           if (latest.status === "processing") poll();
         }
       } catch {
-        if (stillCurrent(id)) poll(); // transient network hiccup — keep trying
+        if (!stillCurrent(id)) return;
+        pollFailuresRef.current += 1;
+        if (pollFailuresRef.current < MAX_POLL_FAILURES) {
+          poll(); // probably a transient hiccup
+          return;
+        }
+        // Stop and tell the doctor. Silently retrying for ever is what made this look like a note that was still being written.
+        setLoadError("Lost contact with the server while the note was being written. Check that the backend is running, then reload.");
       }
     }, POLL_INTERVAL_MS);
   }, [transcriptionId, clearPoll, stillCurrent]);
@@ -81,7 +94,7 @@ export function useSoapNote(transcriptionId: string) {
           setNote(current);
           if (current.status === "processing") poll();
         } catch {
-          if (stillCurrent(id)) setLoadError("Couldn't load the SOAP note for this consultation.");
+          if (stillCurrent(id)) setLoadError("Couldn't load the SOAP note for this consultation. Check that the backend is running.");
         } finally {
           if (stillCurrent(id)) setLoading(false);
         }
