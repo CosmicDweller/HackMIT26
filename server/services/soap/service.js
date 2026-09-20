@@ -222,13 +222,34 @@ export function createSoapService({ config, store, generator, logger = console }
     );
   }
 
-  /** Reconcile a stale note: the doctor confirms it still reflects the edited transcript. Clears the stale state, keeps the text. */
+  /**
+   * Reconcile a stale note: the doctor confirms it still reflects the edited transcript. Clears the stale state, keeps the text.
+   *
+   * The note is re-checked against the transcript AS IT STANDS NOW, exactly as an edit would be. This is the whole point of
+   * reconciling: a flag raised against the old transcript must not outlive the edit that fixed it. Carrying flags over verbatim
+   * meant that identifying a speaker, or correcting the wording a claim rests on, could never clear the flag complaining about it,
+   * so a note that picked up one blocking flag could never be approved by any route.
+   */
   function reconcile(ownerId, transcriptionId, { revision }) {
     const note = store.getSoapNote(ownerId, transcriptionId);
     if (!note) throw new AppError("NOT_FOUND", 404, "This consultation has no SOAP note.");
     const transcription = store.get(ownerId, transcriptionId);
     const claims = note.claims.map((claim) => ({ ...claim, needsReview: true }));
-    const flags = note.reviewFlags.filter((entry) => entry.type !== "stale_source");
+
+    // A flag describing an uncertainty the transcript no longer has is dropped: identifying a speaker is the ONLY answer to a flag
+    // saying that speaker was unidentified, so carrying it over verbatim meant a note that picked one up could never be approved by
+    // any route — not by acknowledging it (blocking flags cannot be), not by regenerating (retry is a no-op on a drafted note).
+    // Flags about the note's own text are left alone; those the doctor clears by correcting the text, which re-checks them.
+    const speakersResolved = transcription.speakers.every((speaker) => speaker.role !== "unassigned")
+      && transcription.segments.every((segment) => segment.speakerId !== null);
+    const wordingResolved = transcription.segments.every((segment) => !segment.needsReview);
+    const obsolete = new Set([
+      "stale_source",
+      ...(speakersResolved ? ["uncertain_speaker"] : []),
+      ...(wordingResolved ? ["uncertain_transcript"] : []),
+    ]);
+    const flags = note.reviewFlags.filter((entry) => !obsolete.has(entry.type));
+
     return withStaleness(
       store.updateSoapNote(ownerId, transcriptionId,
         { source_transcript_revision: transcription.revision, claims, review_flags: flags, revision: note.revision + 1 },

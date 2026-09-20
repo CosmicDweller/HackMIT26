@@ -102,7 +102,6 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
 
   const flags = [];
   const claims = [];
-  let blocking = 0;
 
   note.claims.forEach((raw, index) => {
     const section = SECTIONS.includes(raw?.section) ? raw.section : null;
@@ -110,7 +109,6 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
     const id = `claim_${index + 1}`;
     if (!section || !text) {
       flags.push(flag("unsupported_claim", "warning", section ?? "none", "A generated statement had no usable section or text and was dropped.", { claimId: id }));
-      blocking++;
       return;
     }
 
@@ -146,17 +144,14 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
     if (sourceSegmentIds.length === 0 && sourceFactIds.length === 0) {
       flags.push(flag("missing_source", "warning", section, `"${truncate(text)}" has no valid source in this consultation. Verify it against the transcript.`, { claimId: id }));
       needsReview = true;
-      blocking++;
     }
     if (invalidLines.length > 0) {
       flags.push(flag("invalid_source", "warning", section, `"${truncate(text)}" cited transcript lines that do not exist. Verify it.`, { claimId: id }));
       needsReview = true;
-      blocking++;
     }
     if (invalidFactIds.length > 0) {
       flags.push(flag("invalid_source", "warning", section, `"${truncate(text)}" cited clinician-entered context that does not exist. Verify it.`, { claimId: id }));
       needsReview = true;
-      blocking++;
     }
 
     // 3. Numbers must come from somewhere. A dose or a blood pressure the sources never mention is the worst kind of error.
@@ -166,7 +161,6 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
       flags.push(flag("unsupported_claim", "warning", section,
         `"${truncate(text)}" contains ${unsupportedNumbers.length === 1 ? "a number" : "numbers"} (${unsupportedNumbers.join(", ")}) that the transcript never states. Check it before approving.`, { claimId: id }));
       needsReview = true;
-      blocking++;
     } else if (claimNumbers.some((value) => !citedNumbers.has(value))) {
       // present in the transcript but not in the cited lines: the citation is weak, not the number
       reasons.push("a number in it is not in the cited lines");
@@ -179,7 +173,6 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
       flags.push(flag("unclear_medication", "warning", section,
         `"${truncate(text)}" names ${unsupportedDrugs.join(", ")}, which does not appear in the transcript. Check it before approving.`, { claimId: id }));
       needsReview = true;
-      blocking++;
     }
 
     // 5. Claims resting on uncertain speech inherit that uncertainty.
@@ -206,7 +199,6 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
       if (phrase && allTranscriptText.includes(phrase)) continue; // the source really says it
       flags.push(flag("unsupported_claim", "warning", section,
         `The ${section} section contains a ${label} ("${squash(match[0])}") that the transcript does not state. Remove or correct it before approving.`));
-      blocking++;
     }
   }
 
@@ -223,11 +215,9 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
       if (!mentioned) {
         flags.push(flag("unsupported_claim", "warning", section,
           `The ${section} section records "${squash(match[0])}", but ${subject} is never mentioned in this consultation. A denial can only be documented when it was actually stated.`));
-        blocking++;
       } else if (!deniedInTranscript(subject, allTranscriptText)) {
         flags.push(flag("conflicting_facts", "warning", section,
           `The ${section} section records "${squash(match[0])}", but the transcript mentions ${subject} without denying it. Check this before approving.`));
-        blocking++;
       }
     }
   }
@@ -257,10 +247,22 @@ export function validateNote(note, { lines, segments, manualFacts = [] }) {
     const section = SECTIONS.includes(raw.section) ? raw.section : "none";
     const type = typeof raw.type === "string" ? raw.type : "other";
     if (type === "missing_documentation" && flags.some((existing) => existing.type === "missing_documentation" && existing.section === section)) continue;
-    flags.push(flag(type, raw.severity === "warning" ? "warning" : "info", section, squash(raw.message), { source: "model" }));
+    // An absent finding is never a reason to withhold approval: a consultation that did not examine anything has an empty
+    // Objective, and that is the accurate note. Only an assertion the transcript does not support blocks (severity "warning"), so
+    // the model cannot escalate "nothing was documented here" into something the doctor is unable to clear.
+    const severity = type === "missing_documentation" ? "info" : (raw.severity === "warning" ? "warning" : "info");
+    flags.push(flag(type, severity, section, squash(raw.message), { source: "model" }));
   }
 
-  return { sections: Object.fromEntries(SECTIONS.map((section) => [section, squash(sections[section])])), claims, reviewFlags: withIds(flags), blocking };
+  // Counted from the finished flags, not from the checks above: the model's own flags block too, and reporting only the ones the
+  // deterministic checks raised logged "0 blocking" for notes that could not in fact be approved.
+  const reviewFlags = withIds(flags);
+  return {
+    sections: Object.fromEntries(SECTIONS.map((section) => [section, squash(sections[section])])),
+    claims,
+    reviewFlags,
+    blocking: reviewFlags.filter((entry) => entry.blocking).length,
+  };
 }
 
 /** Flags get stable ids and a resolution state so a doctor can acknowledge the non-blocking ones. */

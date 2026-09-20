@@ -1,7 +1,54 @@
 # Progress
 
 ## Current milestone
-**SOAP notes are wired to the real backend (PR #9).** Merged their SOAP
+**The whole demo path works end to end against real services.** Verified in
+the browser: transcript -> speaker identification -> real Gemini SOAP note ->
+reconcile -> approve -> export. This had never completed before; approval was
+unreachable.
+
+Five fixes got it there (four in `server/`, approved by the user this session):
+
+1. **`thinkingConfig: { thinkingBudget: 0 }`** (`gemini.js`, new
+   `SOAP_THINKING_BUDGET`). Gemini 3.x reasons before answering and those
+   tokens are billed *and* spent from `maxOutputTokens`. Measured on one real
+   consultation: **24.1 s / 6597 tokens -> 4.4 s / 2767 tokens (5.4x faster)**.
+2. **A truncated answer is no longer retried** (`gemini.js`). Thinking could
+   exhaust the budget and cut the JSON mid-string; `finishReason` was only
+   inspected when the text was *empty*, so partial JSON was classed
+   `retryable` and retried 5x with 3+6+12+24 s of waiting. That — not the
+   model — was the "stuck on extracting clinical statements".
+3. **`reconcile` drops flags the transcript has since answered**
+   (`service.js`). This was the demo blocker: a model `uncertain_speaker`
+   flag is *blocking*, and nothing cleared it — not acknowledging (blocking
+   flags can't be), not reconciling, not `retry` (a no-op on a drafted note).
+   Any note that picked one up could never be approved by any route.
+4. **`missing_documentation` can never block** (`validate.js`). Severity came
+   from the model's own pick, so it could escalate "nothing was documented
+   here" into something a doctor cannot clear. An empty Objective is the
+   accurate note for a visit that examined nothing.
+5. **The note refetches when the transcript changes** (`SoapEditor.tsx`).
+   Assigning a speaker makes the note stale server-side, but the client never
+   re-read it: no stale banner, no reconcile button, until a manual reload.
+
+Also: the `blocking` count in the `soap draft:` log counted only the
+validator's own flags, logging `0 blocking` for notes that could not be
+approved.
+
+Merged from the backend this session: notes are never left stuck in
+`processing` (`recoverStuck` at startup + on read), and `useSoapNote` stops
+polling after 5 consecutive failures instead of spinning for ever.
+
+**Checks:** server 508 pass / 0 fail / 6 skipped; client `tsc` clean, 0 lint
+errors, production build OK; no console errors.
+
+**Not verified:** mobile layout — the automation harness would not resize the
+window (`innerWidth` stayed 2560), so narrow-width rendering is unconfirmed.
+`Copy Note` fails under automation only, with `NotAllowedError: Document is
+not focused` — the clipboard API needs a focused window; PDF/TXT export is
+verified (real file on disk, correct content).
+
+## Previous milestone — SOAP notes wired to the real backend (PR #9)
+Merged their SOAP
 implementation and reconciled the client against `docs/SOAP_API_CONTRACT.md`
 rather than the issue summary. `VITE_USE_MOCK_SOAP=false` — every mock flag
 is now off.

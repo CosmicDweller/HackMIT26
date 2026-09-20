@@ -104,6 +104,10 @@ export function createSoapProvider(config, { logger = console, client = null } =
               responseSchema: schema,
               temperature: config.soapTemperature, // low: this is documentation, not prose
               maxOutputTokens: config.soapMaxOutputTokens,
+              // Thinking tokens are billed and counted against maxOutputTokens, so an unbounded budget makes every stage slower,
+              // dearer, and liable to spend the whole allowance reasoning and truncate the JSON mid-string. Extraction and
+              // composition are both tightly specified by the schema and the grounding rules, so they do not need it.
+              thinkingConfig: { thinkingBudget: config.soapThinkingBudget },
               abortSignal: timer.signal,
             },
           });
@@ -117,7 +121,13 @@ export function createSoapProvider(config, { logger = console, client = null } =
           try {
             data = JSON.parse(text);
           } catch {
-            throw new SoapProviderError("PROVIDER_BAD_OUTPUT", { detail: "not JSON", retryable: true });
+            // Partial JSON from a truncated answer. Unlike a one-off malformed reply this is deterministic — the same prompt hits
+            // the same ceiling — so retrying only burns time and quota. Report it instead, and say which it was.
+            const truncated = String(response?.candidates?.[0]?.finishReason) === "MAX_TOKENS";
+            throw new SoapProviderError("PROVIDER_BAD_OUTPUT", {
+              detail: truncated ? "truncated (raise SOAP_MAX_OUTPUT_TOKENS)" : "not JSON",
+              retryable: !truncated,
+            });
           }
           const meta = response?.usageMetadata ?? {};
           const usage = {

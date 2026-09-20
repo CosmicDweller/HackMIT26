@@ -128,6 +128,10 @@ export function loadConfig(env = process.env) {
     soapTimeoutMs: intFromEnv(env, "SOAP_TIMEOUT_MS", 90_000),
     soapTemperature: Number.parseFloat(env.SOAP_TEMPERATURE ?? "") || 0.1, // documentation, not prose
     soapMaxOutputTokens: intFromEnv(env, "SOAP_MAX_OUTPUT_TOKENS", 8192),
+    // Gemini 3.x models reason before answering, and those tokens are billed and spent from soapMaxOutputTokens. Measured on a real
+    // consultation, leaving it unbounded cost ~3900 extra tokens and 2.5x the latency per stage for no gain in note quality, and on
+    // longer transcripts it exhausted the budget and truncated the JSON. Raise it only if note quality demonstrably needs it.
+    soapThinkingBudget: intFromEnv(env, "SOAP_THINKING_BUDGET", 0),
     // A note still "processing" after this, with nothing working on it, is assumed to have lost its worker (a crash or restart) and
     // is marked failed so it can be retried. Must exceed the worst real generation: timeout x (retries + 1) plus rate-limit waits.
     soapStuckAfterMs: intFromEnv(env, "SOAP_STUCK_AFTER_MS", 10 * 60_000),

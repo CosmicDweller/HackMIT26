@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, Clipboard, Download, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SoapGenerationStatus } from "@/components/soap/SoapGenerationStatus";
 import { SoapSectionEditor } from "@/components/soap/SoapSectionEditor";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
     retry,
     acknowledgeFlag,
     discardConflict,
+    refresh,
   } = useSoapNote(transcription.id);
 
   const [editingSection, setEditingSection] = useState<SoapSectionKey | null>(null);
@@ -49,6 +50,17 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
+
+  // Editing the transcript — assigning a speaker, correcting a segment — is what makes this note stale, and the server only
+  // recomputes that on read. Without this the doctor keeps seeing a note that silently disagrees with the transcript: no stale
+  // banner, no reconcile button, and no way to reach either short of reloading the page by hand.
+  const transcriptRevision = transcription.revision;
+  const lastRevisionRef = useRef(transcriptRevision);
+  useEffect(() => {
+    if (lastRevisionRef.current === transcriptRevision) return;
+    lastRevisionRef.current = transcriptRevision;
+    refresh();
+  }, [transcriptRevision, refresh]);
 
   if (loading) {
     return (
@@ -79,6 +91,10 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
   const openAdvisoryFlags = note.reviewFlags.filter(
     (f) => !f.blocking && !f.resolved && !f.acknowledgedAt,
   );
+  // An empty section is a statement about the consultation, not a defect in the note: a visit that examined nothing has an empty
+  // Objective, and that is the accurate record. Counting those as "unresolved review flags" in the approval prompt made an
+  // accurate note look unsafe to sign, so only findings the doctor could actually act on are worth pausing over.
+  const actionableFlags = openAdvisoryFlags.filter((f) => f.type !== "missing_documentation");
 
   function updateSection(key: SoapSectionKey, value: string) {
     setDraft({ ...(draft ?? note!.sections), [key]: value });
@@ -103,7 +119,7 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
       setDraft(null);
       setEditingSection(null);
     }
-    const flagCount = openAdvisoryFlags.length;
+    const flagCount = actionableFlags.length;
     const proceed = window.confirm(
       flagCount > 0
         ? `This note still has ${flagCount} unresolved review flag${flagCount === 1 ? "" : "s"}. Approve anyway?`
