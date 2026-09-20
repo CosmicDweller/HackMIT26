@@ -71,7 +71,7 @@ table = {float(t): evaluate(cal, t) for t in grid}
 # Operating point = the CENTRE of the plateau where all of 1/2/3-speaker counting is >= 99% on CALIBRATION voices.
 # (Choosing the edge of the plateau was measured to transfer badly to held-out voices, so it is not used.)
 plateau = [t for t in grid if min(table[float(t)][f"{k}spk_correct"] for k in (1, 2, 3)) >= 0.99]
-THR = float(np.median(plateau)) if plateau else float(grid.max())
+THR = float(sys.argv[1]) if len(sys.argv) > 1 else (float(np.median(plateau)) if plateau else float(grid.max()))
 print("threshold sweep on CALIBRATION (correct speaker count): thr  1spk  2spk  3spk")
 for t in grid[::2]:
     r = table[float(t)]

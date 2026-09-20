@@ -1,0 +1,61 @@
+{
+ "durationMs": 45629,
+ "turns": [
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Good afternoon, please have a seat and tell me what brings you in today.",
+   "startMs": 950,
+   "endMs": 5346
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I have been very tired for about two weeks and I get dizzy when I stand up quickly.",
+   "startMs": 5996,
+   "endMs": 11361
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "How long have you been feeling this way, and does anything make it better?",
+   "startMs": 12011,
+   "endMs": 16476
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "It comes and goes, mostly in the afternoon, and resting seems to help a little.",
+   "startMs": 17126,
+   "endMs": 22724
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "I would like to check your blood pressure and listen to your heart now.",
+   "startMs": 23374,
+   "endMs": 27392
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "I take one tablet for my blood pressure every morning and a vitamin most days.",
+   "startMs": 28042,
+   "endMs": 33280
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Are you taking any medication regularly, including vitamins or supplements?",
+   "startMs": 33930,
+   "endMs": 39539
+  },
+  {
+   "speaker": "P",
+   "voice": "Kathy",
+   "text": "No, nothing else, except a glass of wine now and then at the weekend.",
+   "startMs": 40189,
+   "endMs": 45229
+  }
+ ]
+}

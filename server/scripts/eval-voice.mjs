@@ -40,7 +40,10 @@ for (const d of doctors) {
 console.log(`enrolled ${references.size}/${doctors.length} held-out doctors with the real service (the rest were rejected by the real quality checks and are excluded)`);
 if (rejected.length) console.log("  rejected:", rejected.join(" | "));
 
-const names = readdirSync(dir).filter((f) => f.endsWith(".truth.json")).map((f) => f.replace(".truth.json", "")).filter((n) => references.has(n.split("__")[0])).slice(0, limit);
+const onlyMerged = process.argv.includes("--only-merged"); // just the recordings Deepgram merged (fast way to test the independent path)
+const names = readdirSync(dir).filter((f) => f.endsWith(".truth.json")).map((f) => f.replace(".truth.json", "")).filter((n) => references.has(n.split("__")[0]))
+  .filter((n) => !onlyMerged || normalizeDeepgramResponse(JSON.parse(readFileSync(`${dir}/${n}.dg.json`, "utf8"))).speakerIndices.length <= 1)
+  .slice(0, limit);
 const sibling = (a, b) => a.split("_")[0] === b.split("_")[0];
 const rows = [];
 for (const name of names) {

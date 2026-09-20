@@ -1,10 +1,10 @@
 {
- "clusterDistanceThreshold": 0.475,
+ "clusterDistanceThreshold": 0.55,
  "falseSplitTarget": 0.01,
  "calibration": {
   "1spk_correct": 1.0,
   "2spk_correct": 1.0,
-  "3spk_correct": 1.0,
+  "3spk_correct": 0.998019801980198,
   "n": {
    "1": 474,
    "2": 521,
@@ -12,9 +12,9 @@
   }
  },
  "heldout": {
-  "1spk_correct": 0.9979757085020243,
-  "2spk_correct": 0.9623015873015873,
-  "3spk_correct": 0.9163346613545816,
+  "1spk_correct": 1.0,
+  "2spk_correct": 0.9166666666666666,
+  "3spk_correct": 0.7370517928286853,
   "n": {
    "1": 494,
    "2": 504,

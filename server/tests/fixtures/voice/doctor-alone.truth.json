@@ -1,0 +1,47 @@
+{
+ "durationMs": 33526,
+ "turns": [
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Good afternoon, please have a seat and tell me what brings you in today.",
+   "startMs": 950,
+   "endMs": 5346
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "How long have you been feeling this way, and does anything make it better?",
+   "startMs": 5996,
+   "endMs": 10461
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "I would like to check your blood pressure and listen to your heart now.",
+   "startMs": 11111,
+   "endMs": 15129
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Are you taking any medication regularly, including vitamins or supplements?",
+   "startMs": 15779,
+   "endMs": 21388
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "That is helpful, thank you. I will order a few tests and we will review them together.",
+   "startMs": 22038,
+   "endMs": 27954
+  },
+  {
+   "speaker": "D",
+   "voice": "Ralph",
+   "text": "Please come back in two weeks, or sooner if the symptoms get worse.",
+   "startMs": 28604,
+   "endMs": 33126
+  }
+ ]
+}

@@ -83,6 +83,32 @@ npm run setup:diarization     # Python venv + two small local models (about 30 M
   conditions on Hugging Face with a personal token, so it was not benchmarked. It can be added behind the same
   JSON interface as `diarize.py`.
 
+## Doctor voice enrollment and identification (contract v4)
+
+```bash
+npm run setup:voice           # isolated Python venv + the SpeechBrain ECAPA-TDNN model (about 2 GB with torch), git-ignored
+npm run eval:voice            # before/after metrics on the synthetic recordings (needs the lab data, see docs/VOICE_EVALUATION.md)
+```
+
+Deepgram sometimes labels a two-person recording as ONE speaker. This feature adds (B) an independent speaker check that runs only
+when Deepgram finds at most one speaker, and (C) verification of the enrolled doctor's voice with a local model
+(`speechbrain/spkrec-ecapa-voxceleb`, Apache-2.0). Deepgram still does all transcription and its word timestamps are never changed.
+
+- **Enrollment:** `GET/POST/DELETE /api/me/voice-profile`. Three samples of the doctor alone, explicit versioned consent, quality
+  checks (silence, too short, clipped, several voices, samples that do not match each other), then only encrypted embeddings are
+  stored (AES-256-GCM; `VOICE_PROFILE_KEY` in `.env`, generate one with `openssl rand -base64 32`). Raw audio is deleted before the
+  response is sent. Embeddings are never returned or logged.
+- **Identification:** every speaker gets `identificationStatus` (`matched`, `unknown`, `uncertain`, `unavailable`) and, only when
+  `matched`, `suggestedRole: "doctor"`. The doctor's `role` is still set only by the doctor. A voice that is not the doctor is
+  `unknown`, never "patient".
+- **Thresholds** are stored in `voice/calibration.json` with the rule that produced each one, measured on held-out synthetic
+  identities. They MUST be re-measured with real consenting speakers before real use (text-to-speech voices are easier than people).
+- **Not installed?** Everything still works: identification is `unavailable`, the transcript and Deepgram's speakers are unchanged.
+- **Real-inference tests** (`tests/real-voice.test.js`) run the real model and are skipped when it is not installed. Its live section
+  (Deepgram + the real model) needs `DEEPGRAM_LIVE_TEST=1` and uploads a few synthetic recordings.
+- **Probes:** `node scripts/probe-voice-scenarios.mjs` (all fixture scenarios) and `node scripts/probe-voice-long.mjs --minutes 120`
+  (timing and memory of the analysis on a two-hour recording; no Deepgram call).
+
 ## Preflight check and warm-up
 
 ```bash
@@ -171,6 +197,8 @@ npm test
 - `tests/deepgram.test.js`: the Deepgram client against a stub (exact parameters, streaming, error classification, no key leakage).
 - `tests/jobs.test.js`: the job system against a stub that replays real responses (lifecycle, retries, duplicate-charge safety,
   restart recovery, retention, callbacks, ownership, a real 7200 s boundary).
+- `tests/voice-math.test.js`, `voice-profile.test.js`, `voice-analysis.test.js`, `voice-jobs.test.js`: the voice feature with scripted stand-in embeddings (clustering parity with SciPy, consent/quality/encryption/ownership, decision policy, alignment, job integration).
+- `tests/real-voice.test.js`: the REAL voice model and enrollment on synthetic voices (skipped if not installed); live Deepgram section opt-in.
 - `tests/real-deepgram.test.js`: LIVE Deepgram through the full stack; skipped unless `DEEPGRAM_LIVE_TEST=1` and a key are set.
 - `tests/real-inference.test.js`: runs the real FFmpeg + whisper.cpp + `small.en` model on
   `tests/fixtures/jfk.wav` (public-domain sample from the whisper.cpp repo), as WAV,

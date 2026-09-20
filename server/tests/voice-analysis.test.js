@@ -38,14 +38,14 @@ function scenario(turns, dg) {
   return { normalized: normalizeDeepgramResponse(response), turns, words };
 }
 
-async function run(sc, { references = PROFILE, voiceOf, embedderOverrides = {}, segments } = {}) {
+async function run(sc, { references = PROFILE, voiceOf, embedderOverrides = {}, segments, configOverrides = {} } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "va-"));
   cleanups.push(() => rm(dir, { recursive: true, force: true }));
   const intervals = segments ?? sc.turns.map((t) => ({ speaker: 0, start: t.at, end: t.at + t.seconds }));
   const script = path.join(dir, "fake-seg");
   await writeFile(script, `#!/bin/sh\nprintf '%s' '${JSON.stringify({ engine: "fake", segments: intervals })}'\n`);
   await chmod(script, 0o755);
-  const config = { ...loadConfig({}), diarizationEnabled: true, diarizationPython: script, diarizationScript: script, diarizationTimeoutMs: 10_000 };
+  const config = { ...loadConfig({}), diarizationEnabled: true, diarizationPython: script, diarizationScript: script, diarizationTimeoutMs: 10_000, ...configOverrides };
   const whoAt = voiceOf ?? ((ms) => sc.turns.find((t) => ms >= t.at * 1000 - 1 && ms <= (t.at + t.seconds) * 1000 + 1)?.who ?? "P");
   const embedder = {
     available: async () => true,
@@ -172,7 +172,7 @@ describe("Deepgram merged voices into ONE speaker", () => {
   test("the doctor returns after a very long gap and is still the same speaker", async () => {
     const turns = [{ who: "D", at: 0, seconds: 6 }, { who: "P", at: 7, seconds: 6 }, { who: "D", at: 14, seconds: 6 }, { who: "P", at: 21, seconds: 6 },
       { who: "D", at: 3600, seconds: 6 }, { who: "P", at: 3607, seconds: 6 }, { who: "D", at: 3614, seconds: 6 }];
-    const r = await run(scenario(turns, () => 0));
+    const r = await run(scenario(turns, () => 0), { configOverrides: { voiceIndependentMaxSeconds: 10_000 } }); // (a real hour-long file would be skipped by the default 30 min limit)
     assert.deepEqual(r.normalized.segments.map((s) => s.providerSpeaker), [0, 1, 0, 1, 0, 1, 0]);
     assert.equal(r.normalized.segments.at(-1).startMs, 3_614_000, "timestamps are the recording's own, not reset");
     assert.equal(statusOf(r, 0), "matched");
@@ -227,12 +227,17 @@ describe("failure and unavailability (never fabricated)", () => {
 });
 
 describe("regions", () => {
-  test("turns cut at the segmentation model's 10 s window edges are re-joined", () => {
-    const regions = regionsFromIntervals([{ startMs: 8000, endMs: 10000 }, { startMs: 10000, endMs: 11500 }, { startMs: 13000, endMs: 14000 }]);
-    assert.deepEqual(regions, [{ startMs: 8000, endMs: 11500 }, { startMs: 13000, endMs: 14000 }]);
+  test("the model's short touching chunks are joined into pieces of about 4.5 s, so each is embedded as one unit", () => {
+    const chunks = Array.from({ length: 10 }, (_, i) => ({ startMs: 1000 + i * 996, endMs: 1000 + (i + 1) * 996 }));
+    const regions = regionsFromIntervals(chunks);
+    assert.ok(regions.every((r) => r.endMs - r.startMs <= 4500));
+    assert.ok(regions.every((r) => r.endMs - r.startMs >= 1000), "no leftover fragment shorter than the embedding minimum");
+    assert.equal(regions[0].startMs, 1000);
+    assert.equal(regions.at(-1).endMs, 1000 + 10 * 996);
   });
-  test("a real pause or speaker change is never joined", () => {
-    assert.equal(regionsFromIntervals([{ startMs: 1000, endMs: 3000 }, { startMs: 3050, endMs: 5000 }]).length, 2);
+  test("a pause or a gap over 120 ms is never joined", () => {
+    assert.equal(regionsFromIntervals([{ startMs: 1000, endMs: 3000 }, { startMs: 3300, endMs: 5000 }]).length, 2);
+    assert.equal(regionsFromIntervals([{ startMs: 1000, endMs: 3000 }, { startMs: 3050, endMs: 4000 }]).length, 1);
   });
   test("very long regions are cut into bounded pieces", () => {
     const regions = regionsFromIntervals([{ startMs: 0, endMs: 70_000 }]);
@@ -244,5 +249,37 @@ describe("regions", () => {
     const by = speakerRegionsFromWords(words);
     assert.deepEqual(by.get(0), [{ speaker: 0, startMs: 0, endMs: 2000 }, { speaker: 0, startMs: 5000, endMs: 6000 }]);
     assert.equal(by.get(1).length, 1);
+  });
+  test("continuous speech is cut into calibration-sized pieces so it counts as the evidence it is", () => {
+    const words = Array.from({ length: 60 }, (_, i) => ({ speaker: 0, valid: true, start: i * 0.5, end: i * 0.5 + 0.45 })); // 30 s without a pause
+    const pieces = speakerRegionsFromWords(words).get(0);
+    assert.ok(pieces.length >= 6, `${pieces.length} pieces`);
+    assert.ok(pieces.every((p) => p.endMs - p.startMs <= 4600));
+  });
+});
+
+describe("long recordings and a failed independent check", () => {
+  const merged = () => scenario(DPDPDP, () => 0);
+
+  test("a recording over the limit skips the independent check, says so, and still identifies the doctor", async () => {
+    let embedded = 0;
+    const sc = merged();
+    const r = await run(sc, { embedderOverrides: { embedRegions: async (_w, regions) => { embedded++; return regions.map(() => VOICES.D); } }, configOverrides: { voiceIndependentMaxSeconds: 30 } });
+    assert.equal(r.source, "deepgram");
+    assert.ok(r.warnings.some((w) => w.code === "INDEPENDENT_SPEAKER_CHECK_SKIPPED"));
+    assert.equal(statusOf(r, 0), "matched", "doctor identification does not depend on the independent check");
+    assert.ok(embedded > 0);
+    assert.deepEqual(wordsOf(r.normalized), wordsOf(sc.normalized), "transcript untouched");
+  });
+
+  test("a recording within the limit is not skipped, and one where Deepgram found two speakers has no skip warning", async () => {
+    const r = await run(scenario(DPDPDP, (i) => i % 2), { configOverrides: { voiceIndependentMaxSeconds: 30 } });
+    assert.ok(!r.warnings.some((w) => w.code === "INDEPENDENT_SPEAKER_CHECK_SKIPPED"));
+  });
+
+  test("when the segmentation model fails on a one-speaker result, a warning says the second check did not run", async () => {
+    const r = await run(merged(), { configOverrides: { diarizationPython: "/nonexistent/python", diarizationScript: "/nonexistent.py" } });
+    assert.equal(r.source, "deepgram");
+    assert.ok(r.warnings.some((w) => w.code === "VOICE_ANALYSIS_FAILED"));
   });
 });

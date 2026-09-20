@@ -14,23 +14,30 @@ import { clusterAverageLinkage, decideDoctor, meanUnit, scoreAgainstProfile, dot
 const C = calibration;
 const MIN_REGION_MS = 1000;
 const MAX_REGION_MS = 20_000;
-const WINDOW_EDGE_MS = 10_000; // the segmentation model works in 10 s windows and splits turns at their edges
-const WINDOW_TOLERANCE_MS = 150;
+const TOUCHING_GAP_MS = 120;
 const MAX_CLUSTER_ITEMS = 300; // agglomerative clustering is cubic: cluster a spread of regions, assign the rest
-const MAX_REGIONS_PER_SPEAKER = 60;
+const MAX_REGIONS_PER_SPEAKER = 120;
+// A speaker's speech is embedded in pieces of about this length, the same size as the utterances the decision thresholds were
+// calibrated on. (Continuous speech otherwise forms one or two very long regions, which would wrongly count as too little evidence.)
+const PIECE_MS = 4500;
 const WORD_REGION_GAP_MS = 800;
 
-/** Turn the segmentation model's segments into speech regions to embed. Re-joins turns it cut at its own window edges. */
+/**
+ * Turn the segmentation model's segments into speech regions to embed. The model reports speech in short chunks (often just
+ * under 1 s, cut at its own window edges), so touching chunks are joined into pieces of about PIECE_MS: a piece is embedded as
+ * one unit, which is also the size of utterance the thresholds were calibrated on. A pause (gap over 120 ms) always starts a
+ * new region, so a turn taken after a pause is never mixed with the previous one.
+ */
 export function regionsFromIntervals(intervals) {
   const sorted = [...intervals].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
   const merged = [];
   for (const seg of sorted) {
     const last = merged.at(-1);
-    const atWindowEdge = last && Math.abs(last.endMs % WINDOW_EDGE_MS) < WINDOW_TOLERANCE_MS || last && Math.abs((last.endMs % WINDOW_EDGE_MS) - WINDOW_EDGE_MS) < WINDOW_TOLERANCE_MS;
-    if (last && atWindowEdge && seg.startMs - last.endMs <= 120 && seg.startMs >= last.endMs - 5) last.endMs = seg.endMs;
+    if (last && seg.startMs - last.endMs <= TOUCHING_GAP_MS && seg.startMs >= last.endMs - 5 && seg.endMs - last.startMs <= PIECE_MS) last.endMs = seg.endMs;
+    else if (last && seg.startMs < last.endMs && seg.endMs > last.endMs) last.endMs = seg.endMs; // overlapping chunks: extend
     else merged.push({ startMs: seg.startMs, endMs: seg.endMs });
   }
-  // long regions are cut into bounded pieces (bounded memory, and one speaker rarely talks for more than that uninterrupted)
+  // long regions are cut into bounded pieces (bounded memory)
   return merged.flatMap((r) => {
     const pieces = [];
     for (let s = r.startMs; s < r.endMs; s += MAX_REGION_MS) pieces.push({ startMs: s, endMs: Math.min(r.endMs, s + MAX_REGION_MS) });
@@ -49,7 +56,7 @@ export function speakerRegionsFromWords(words) {
     }
     const startMs = Math.round(w.start * 1000);
     const endMs = Math.round(w.end * 1000);
-    if (current && current.speaker === w.speaker && startMs - current.endMs <= WORD_REGION_GAP_MS && endMs - current.startMs <= MAX_REGION_MS) {
+    if (current && current.speaker === w.speaker && startMs - current.endMs <= WORD_REGION_GAP_MS && endMs - current.startMs <= PIECE_MS) {
       current.endMs = endMs;
     } else {
       current = { speaker: w.speaker, startMs, endMs };
@@ -66,8 +73,10 @@ const seconds = (regions) => regions.reduce((sum, r) => sum + (r.endMs - r.start
  * Independent speaker clusters from acoustic evidence. Returns { clusters: number of qualifying voices,
  * labelOf(word) -> cluster index | null, evidence } or null when it cannot run.
  */
-export async function independentSpeakers({ wavPath, config, embedder, signal }) {
-  const seg = await diarizeWav(wavPath, { ...config, diarizationThreshold: 0.001 }, { timeoutMs: config.diarizationTimeoutMs, signal });
+export async function independentSpeakers({ wavPath, config, embedder, signal, durationSeconds = 0 }) {
+  // the default budget suits short recordings; long ones get time in proportion to their length (measured ~0.1x real time at 20 minutes)
+  const timeoutMs = Math.max(config.diarizationTimeoutMs, Math.round(durationSeconds * 1000 * 0.3));
+  const seg = await diarizeWav(wavPath, { ...config, diarizationThreshold: 0.001 }, { timeoutMs, signal });
   if (seg.status !== "ok") return null;
   const regions = regionsFromIntervals(seg.intervals).filter((r) => r.endMs - r.startMs >= MIN_REGION_MS);
   if (regions.length === 0) return { clusters: 0, labelOf: () => null, evidence: [] };
@@ -126,13 +135,21 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
   // ---- B. diarization: is Deepgram's speaker count consistent with independent acoustic evidence? ----
   // (Only when the voice model is installed, and only when it could change the outcome: a single Deepgram speaker, or an enrolled doctor.)
   let independent = null;
-  if ((await embedder.available()) && (dgSpeakers.size <= 1 || wantIdentification)) {
+  const durationSeconds = flat.reduce((max, w) => Math.max(max, w.end ?? 0), 0);
+  const tooLong = durationSeconds > (config.voiceIndependentMaxSeconds ?? Infinity);
+  if (tooLong && dgSpeakers.size <= 1 && (await embedder.available())) {
+    warnings.push({ code: "INDEPENDENT_SPEAKER_CHECK_SKIPPED", message: `Deepgram found ${dgSpeakers.size === 1 ? "one speaker" : "no speaker labels"}, and the recording is too long for the independent speaker check, so it was not run. If more than one person spoke, please assign speakers by hand.` });
+  }
+  if ((await embedder.available()) && !tooLong && (dgSpeakers.size <= 1 || wantIdentification)) {
     try {
-      independent = await independentSpeakers({ wavPath, config, embedder, signal });
+      independent = await independentSpeakers({ wavPath, config, embedder, signal, durationSeconds });
     } catch (error) {
       if (error.aborted || error.status === 499) throw error;
       warnings.push({ code: "VOICE_ANALYSIS_FAILED", message: "Independent voice analysis failed, so Deepgram's speaker labels were used without a second check." });
     }
+  }
+  if (!independent && !tooLong && dgSpeakers.size <= 1 && (await embedder.available()) && !warnings.some((w) => w.code === "VOICE_ANALYSIS_FAILED")) {
+    warnings.push({ code: "VOICE_ANALYSIS_FAILED", message: "Independent voice analysis could not run, so Deepgram's speaker labels were used without a second check." });
   }
   if (independent) {
     internal.independentClusters = independent.clusters;
@@ -159,8 +176,10 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
       const regionsBySpeaker = speakerRegionsFromWords(finalWords);
       const entries = [];
       for (const speaker of speakers) {
-        const regions = (regionsBySpeaker.get(speaker) ?? []).filter((r) => r.endMs - r.startMs >= MIN_REGION_MS)
-          .sort((a, b) => (b.endMs - b.startMs) - (a.endMs - a.startMs)).slice(0, MAX_REGIONS_PER_SPEAKER);
+        const all = (regionsBySpeaker.get(speaker) ?? []).filter((r) => r.endMs - r.startMs >= MIN_REGION_MS);
+        // more pieces than the cap (a very long recording): an even spread across the recording, not just the longest
+        const step = Math.max(1, Math.ceil(all.length / MAX_REGIONS_PER_SPEAKER));
+        const regions = all.filter((_, i) => i % step === 0).slice(0, MAX_REGIONS_PER_SPEAKER);
         entries.push({ speaker, regions });
       }
       const flatRegions = entries.flatMap((e) => e.regions);

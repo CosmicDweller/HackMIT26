@@ -20,10 +20,11 @@
  },
  "clustering": {
   "method": "average linkage on cosine distance",
-  "distanceThreshold": 0.475,
+  "distanceThreshold": 0.55,
   "minClusterSpeechSeconds": 2.5,
   "minClusterRegions": 1,
-  "evidenceRule": "Measured: the correct-split rate was ~96% whether the smaller voice had 1 or 4 regions, and the false-split rate did not fall with more regions, so more evidence buys no measured safety. A floor of one region of at least 2.5 s remains so a cough or a laugh alone cannot become a speaker. Real-world artefacts (crosstalk, background TV) are NOT measured."
+  "evidenceRule": "Measured: the correct-split rate was ~96% whether the smaller voice had 1 or 4 regions, and the false-split rate did not fall with more regions, so more evidence buys no measured safety. A floor of one region of at least 2.5 s remains so a cough or a laugh alone cannot become a speaker. Real-world artefacts (crosstalk, background TV) are NOT measured.",
+  "thresholdRule": "Upper part of the calibrated plateau (0.375-0.575; the centre, 0.475, was the first choice). Independent clustering only runs when Deepgram found ONE speaker, so a split that is too eager fabricates speakers while one that is too cautious just leaves Deepgram's answer: the costs are asymmetric. On real recordings 0.475 over-split one recording (a variable, hoarse voice became 4 speakers) and 0.55 did not, at equal recall (35/36 correct counts on 36 fixtures and pair recordings)."
  },
  "enrollment": {
   "minVoicedSeconds": 6,
