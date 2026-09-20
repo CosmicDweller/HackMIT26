@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RecorderStatus = "idle" | "requesting" | "recording" | "paused" | "stopped";
 
-/** 2 hours — consultations can run long. Backend limits may still be lower; see docs/API_CONTRACT.md. */
-export const MAX_RECORDING_SECONDS = 7200;
+/** 30 minutes — matches the backend's synchronous recording limit; see docs/API_CONTRACT.md. */
+export const MAX_RECORDING_SECONDS = 1800;
 
 /** Show a "running out of time" warning in the last 5 minutes. */
 export const RECORDING_WARNING_THRESHOLD_SECONDS = MAX_RECORDING_SECONDS - 300;

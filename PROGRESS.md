@@ -1,15 +1,15 @@
 # Progress
 
 ## Current milestone
-**Reconciled the client against the backend's real voice-enrollment merge
-(Contract v4, `main`).** The backend shipped a full local ECAPA-TDNN
-implementation while SOAP notes were in progress; merged `main` into `kv`
-and found the real contract differs from what was mocked/proposed
-(different field names, a 4-value `identificationStatus`, consent
-versioning, per-sample rejection errors). Reconciled all of it — verified
-live against the real backend, not just by reading the contract doc.
+**Recording limit lowered from 2 hours to 30 minutes.** Product decision,
+client-side change (`useAudioRecorder.ts`'s `MAX_RECORDING_SECONDS`:
+7200 -> 1800); the actual enforcement point is the backend's job endpoint
+limit, which needs the matching change there — flagged on issue #3. The
+client change alone just stops recording earlier and shows the shorter
+budget in the UI; a doctor could still exceed the backend's own limit until
+that side is updated too.
 
-## Voice enrollment — reconciled against the real backend (Contract v4)
+## Previous milestone — voice enrollment reconciled against the real backend (Contract v4)
 `git merge origin/main` brought in `d9c7bda`/`38c81a0` (backend: real local
 voice enrollment + speaker identification, merged as PR #8). Compared
 against what this branch had mocked/proposed and fixed every mismatch:
