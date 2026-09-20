@@ -233,6 +233,7 @@ export function segmentsFromWords(groups, { reviewWordConfidence = 0.85, reviewS
     const needsReview =
       run.speaker === null ||
       timed.length !== run.words.length ||
+      run.words.some((word) => word.reviewSpeaker === true) ||
       run.words.some((word) => word.confidence !== null && (
         word.confidence < REVIEW_ALWAYS_BELOW ||
         (word.confidence < reviewWordConfidence && word.text.replace(/[^a-z0-9]/gi, "").length >= REVIEW_MIN_WORD_LENGTH)
@@ -348,7 +349,15 @@ export function minorSpeakers(segments) {
  * punctuation and timestamps are untouched: nothing is dropped or duplicated, only the speaker changes.
  */
 export function relabelSpeakers(normalized, speakerOf, options = {}) {
-  const groups = normalized.groups.map((group) => group.map((word) => ({ ...word, speaker: speakerOf(word), speakerConfidence: null })));
+  // `speakerOf` returns a speaker number or null, or { speaker, confidence, overlap, review } (alignment with a diarizer): the extra fields
+  // become the word's speaker confidence and the flags that make a segment "needs review". No word's text or time is ever touched.
+  const groups = normalized.groups.map((group) => group.map((word) => {
+    const label = speakerOf(word);
+    if (label !== null && typeof label === "object") {
+      return { ...word, speaker: label.speaker, speakerConfidence: label.confidence ?? null, overlap: Boolean(label.overlap), reviewSpeaker: Boolean(label.review) };
+    }
+    return { ...word, speaker: label, speakerConfidence: null };
+  }));
   const flat = groups.flat();
   const segments = segmentsFromWords(groups, options);
   const labelled = flat.filter((word) => word.speaker !== null).length;

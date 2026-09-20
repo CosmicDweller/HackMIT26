@@ -10,6 +10,7 @@ import { createVoiceProfileRouter } from "./routes/voiceProfile.js";
 import { createEmbedder } from "./services/voice/embedder.js";
 import { createVoiceService } from "./services/voice/enrollment.js";
 import { createJobManager } from "./services/jobs.js";
+import { createPyannote } from "./services/pyannote.js";
 import { createPipeline } from "./services/pipeline.js";
 
 /**
@@ -28,9 +29,10 @@ export function createApp(config, overrides = {}) {
   const authenticate = createAuthenticator(config, { jwks: overrides.jwks, store });
   const embedder = overrides.embedder ?? createEmbedder(config);
   const voice = createVoiceService({ config, store, embedder });
+  const pyannote = overrides.pyannote ?? createPyannote(config);
   app.use("/api/me/voice-profile", createVoiceProfileRouter(config, voice, authenticate));
   // Every authenticated recording goes through the persistent job system.
-  const jobs = createJobManager({ config, store, pipeline, voice, embedder });
+  const jobs = createJobManager({ config, store, pipeline, voice, embedder, pyannote });
   app.use("/api/transcriptions", createTranscriptionsRouter(config, jobs, store, authenticate));
   app.use("/api/transcription-jobs", createJobsRouter(config, jobs, store, authenticate));
   app.get("/api/me", authenticate, (req, res) => {
@@ -38,6 +40,7 @@ export function createApp(config, overrides = {}) {
   });
   app.use(errorHandler);
   app.locals.store = store;
+  app.locals.pyannote = pyannote;
   app.locals.jobs = jobs;
   app.locals.voice = voice;
   app.locals.embedder = embedder;

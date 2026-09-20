@@ -89,6 +89,20 @@ export function loadConfig(env = process.env) {
     // audio, and much worse than linear (over 10 minutes for two hours). Longer recordings skip it (with a warning); doctor
     // identification, which embeds a bounded number of regions, still runs.
     voiceIndependentMaxSeconds: intFromEnv(env, "VOICE_INDEPENDENT_MAX_SECONDS", 30 * 60),
+    // Speaker diarization with pyannote Community-1 (local Python worker, isolated venv). Separate PYANNOTE_* names because DIARIZATION_*
+    // already configures the older sherpa-onnx module. Community-1 says who spoke when; Deepgram still says what was said.
+    pyannoteEnabled: env.PYANNOTE_ENABLED !== "false",
+    pyannotePython: path.resolve(serverDir, env.PYANNOTE_PYTHON ?? ".venv-diarization/bin/python"),
+    pyannoteScript: path.join(serverDir, "diarization", "pyannote_diarize.py"),
+    pyannoteDevice: env.PYANNOTE_DEVICE ?? "cpu", // cpu | mps | cuda: CPU is the verified baseline
+    pyannoteModelCache: env.PYANNOTE_MODEL_CACHE ? path.resolve(serverDir, env.PYANNOTE_MODEL_CACHE) : "", // empty = the Hugging Face default cache
+    pyannoteMaxConcurrent: intFromEnv(env, "PYANNOTE_MAX_CONCURRENT_JOBS", 1),
+    // A run gets max(PYANNOTE_TIMEOUT_MIN_MS, audio length x PYANNOTE_TIMEOUT_FACTOR), never more than PYANNOTE_TIMEOUT_MAX_MS.
+    pyannoteTimeoutMinMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MIN_MS", 120_000),
+    pyannoteTimeoutFactor: Number.parseFloat(env.PYANNOTE_TIMEOUT_FACTOR ?? "") || 1,
+    pyannoteTimeoutMaxMs: intFromEnv(env, "PYANNOTE_TIMEOUT_MAX_MS", 4 * 60 * 60_000),
+    // "always": speakers come from pyannote whenever it runs. "when-merged": only when Deepgram found at most one speaker.
+    pyannotePolicy: env.PYANNOTE_POLICY === "when-merged" ? "when-merged" : "always",
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),
   };
 }

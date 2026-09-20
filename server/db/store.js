@@ -237,6 +237,8 @@ export function openStore(dbPath) {
       warnings: JSON.parse(row.warnings ?? "[]"),
       // Which analysis produced the speaker labels, and whether the doctor's enrolled voice was identified.
       speakerSource: row.speaker_source ?? (row.engine === "deepgram" ? "deepgram" : "local"),
+      // which system produced the speaker labels, by name (pyannote Community-1, Deepgram's own diarizer, the older sherpa-onnx + ECAPA check, or the local engine)
+      diarizationProvider: { pyannote: "pyannote-community-1", deepgram: "deepgram", independent: "sherpa-onnx+ecapa", local: "sherpa-onnx" }[row.speaker_source ?? (row.engine === "deepgram" ? "deepgram" : "local")] ?? null,
       voiceIdentificationStatus: row.voice_status ?? "not_enrolled",
       speakers: q.speakers.all(row.id).map((sp) => ({
         id: sp.id, label: sp.label, role: sp.role, // role = what the DOCTOR confirmed

@@ -61,7 +61,7 @@ const TERMINAL = new Set(["completed", "failed"]);
 const sha256 = (value) => createHash("sha256").update(value).digest();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createJobManager({ config, store, pipeline, voice = null, embedder = null, logger = console }) {
+export function createJobManager({ config, store, pipeline, voice = null, embedder = null, pyannote = null, logger = console }) {
   const events = new EventEmitter();
   events.setMaxListeners(0);
   const queue = [];
@@ -168,19 +168,26 @@ export function createJobManager({ config, store, pipeline, voice = null, embedd
    * doctor, or a single Deepgram speaker that independent evidence might split. Any failure leaves Deepgram's result as it was.
    */
   async function voiceAnalysis(job, normalized, getWav) {
-    if (!voice || !embedder || !config.voiceEnabled) return null;
+    const dgSpeakers = new Set(normalized.groups.flat().map((w) => w.speaker).filter((sp) => sp !== null)).size;
+    const voiceOn = Boolean(voice && embedder && config.voiceEnabled);
+    let usePyannote = false;
     try {
-      const profile = await voice.status(job.owner_id);
+      usePyannote = Boolean(pyannote) && config.pyannoteEnabled && (config.pyannotePolicy === "always" || dgSpeakers <= 1) && (await pyannote.available());
+    } catch { /* not available */ }
+    if (!voiceOn && !usePyannote) return null;
+    try {
+      const profile = voiceOn ? await voice.status(job.owner_id) : { status: "not_enrolled" };
       const references = profile.status === "enrolled" ? await voice.loadReferences(job.owner_id) : null;
-      const dgSpeakers = new Set(normalized.groups.flat().map((w) => w.speaker).filter((sp) => sp !== null)).size;
-      if (!(await embedder.available())) {
-        return references ? { normalized, source: "deepgram", voiceStatus: "unavailable", identification: new Map(), warnings: [], internal: {} } : null;
-      }
-      if (!references && dgSpeakers > 1) {
-        return profile.status === "needs_reenrollment" ? { normalized, source: "deepgram", voiceStatus: "needs_reenrollment", identification: new Map(), warnings: [], internal: {} } : null;
+      if (!usePyannote) {
+        if (!(await embedder.available())) {
+          return references ? { normalized, source: "deepgram", voiceStatus: "unavailable", identification: new Map(), warnings: [], internal: {} } : null;
+        }
+        if (!references && dgSpeakers > 1) {
+          return profile.status === "needs_reenrollment" ? { normalized, source: "deepgram", voiceStatus: "needs_reenrollment", identification: new Map(), warnings: [], internal: {} } : null;
+        }
       }
       const wavPath = await getWav();
-      const result = await analyzeSpeakers({ normalized, wavPath, references, config, embedder });
+      const result = await analyzeSpeakers({ normalized, wavPath, references, config, embedder, pyannote: usePyannote ? pyannote : null });
       if (!references && profile.status === "needs_reenrollment") result.voiceStatus = "needs_reenrollment";
       return result;
     } catch (error) {

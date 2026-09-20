@@ -1,5 +1,6 @@
 import { relabelSpeakers } from "../deepgram.js";
 import { diarizeWav } from "../diarization.js";
+import { alignWords, alignmentSummary } from "../speakerAlignment.js";
 import { calibration } from "./calibration.js";
 import { clusterAverageLinkage, decideDoctor, meanUnit, scoreAgainstProfile, dot } from "./vecmath.js";
 
@@ -50,7 +51,8 @@ export function speakerRegionsFromWords(words) {
   const bySpeaker = new Map();
   let current = null;
   for (const w of words) {
-    if (w.speaker === null || !w.valid) {
+    // words spoken over another speaker are left out: they would put two voices into one embedding
+    if (w.speaker === null || !w.valid || w.overlap) {
       current = null;
       continue;
     }
@@ -119,11 +121,25 @@ export async function independentSpeakers({ wavPath, config, embedder, signal, d
   return { clusters: order.length, labelOf, evidence: order.map((c) => evidence[c]) };
 }
 
+/** Run-length form of the speaker labels as they came from Deepgram: [{ startMs, endMs, speaker }], for diagnostic comparison only. */
+export function speakerRuns(words) {
+  const runs = [];
+  for (const w of words) {
+    if (!w.valid) continue;
+    const startMs = Math.round(w.start * 1000);
+    const endMs = Math.round(w.end * 1000);
+    const last = runs.at(-1);
+    if (last && last.speaker === w.speaker) last.endMs = endMs;
+    else runs.push({ startMs, endMs, speaker: w.speaker });
+  }
+  return runs;
+}
+
 /**
  * The analysis for one Deepgram result. `references` are the doctor's decrypted profile embeddings (or null when not enrolled).
  * Returns { normalized (possibly relabelled), source, voiceStatus, identification: Map(speaker -> {...}), warnings, internal }.
  */
-export async function analyzeSpeakers({ normalized, wavPath, references, config, embedder, signal }) {
+export async function analyzeSpeakers({ normalized, wavPath, references, config, embedder, pyannote = null, signal }) {
   const warnings = [];
   const flat = normalized.groups.flat();
   const dgSpeakers = new Set(flat.map((w) => w.speaker).filter((s) => s !== null));
@@ -132,15 +148,49 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
   let source = "deepgram";
   const internal = { deepgramSpeakers: dgSpeakers.size };
 
-  // ---- B. diarization: is Deepgram's speaker count consistent with independent acoustic evidence? ----
+  const durationSeconds = flat.reduce((max, w) => Math.max(max, w.end ?? 0), 0);
+  const voiceReady = Boolean(embedder) && (await embedder.available());
+  internal.deepgramRuns = speakerRuns(flat); // Deepgram's own labels, kept for diagnostic comparison (never returned to a client)
+
+  // ---- B1. diarization by pyannote Community-1: who spoke when. Deepgram's WORDS are aligned to its speaker turns. ----
+  let fromPyannote = false;
+  if (pyannote && (config.pyannotePolicy === "always" || dgSpeakers.size <= 1) && (await pyannote.available())) {
+    try {
+      const diar = await pyannote.diarize(wavPath, { durationSeconds, signal });
+      const aligned = alignWords(flat, diar);
+      const index = new Map(aligned.speakers.map((label, i) => [label, i])); // recording-wide ids, numbered by first appearance
+      const byWord = new Map(flat.map((word, i) => [word, aligned.labels[i]]));
+      result = relabelSpeakers(normalized, (word) => {
+        const found = byWord.get(word);
+        return found.speaker === null ? null : { speaker: index.get(found.speaker), confidence: found.confidence, overlap: found.overlap, review: found.review };
+      });
+      source = "pyannote";
+      fromPyannote = true;
+      internal.pyannote = {
+        model: diar.model, versions: diar.versions, device: diar.device, speakers: diar.speakers, loadTimeMs: diar.loadTimeMs, inferenceTimeMs: diar.inferenceTimeMs,
+        processingTimeMs: diar.processingTimeMs, labelToSpeaker: Object.fromEntries(index), alignment: alignmentSummary(aligned.labels), exclusive: diar.exclusive,
+      };
+      if (aligned.speakers.length !== dgSpeakers.size) {
+        warnings.push({
+          code: "SPEAKERS_FROM_PYANNOTE",
+          message: `Speaker detection (pyannote) found ${aligned.speakers.length} speaker${aligned.speakers.length === 1 ? "" : "s"} where Deepgram found ${dgSpeakers.size}. The pyannote speakers were used. Please review the speaker labels.`,
+        });
+      }
+    } catch (error) {
+      if (error.aborted || error.status === 499 || error.code === "REQUEST_CANCELLED") throw error;
+      internal.pyannote = { failed: error.code ?? "PYANNOTE_FAILED" };
+      warnings.push({ code: "PYANNOTE_FAILED", message: "Speaker detection (pyannote) could not run, so Deepgram's speaker labels were used as the fallback. Please review the speaker labels." });
+    }
+  }
+
+  // ---- B2. independent check (sherpa segmentation + ECAPA clustering): only when pyannote did not label the words. ----
   // (Only when the voice model is installed, and only when it could change the outcome: a single Deepgram speaker, or an enrolled doctor.)
   let independent = null;
-  const durationSeconds = flat.reduce((max, w) => Math.max(max, w.end ?? 0), 0);
   const tooLong = durationSeconds > (config.voiceIndependentMaxSeconds ?? Infinity);
-  if (tooLong && dgSpeakers.size <= 1 && (await embedder.available())) {
+  if (!fromPyannote && tooLong && dgSpeakers.size <= 1 && voiceReady) {
     warnings.push({ code: "INDEPENDENT_SPEAKER_CHECK_SKIPPED", message: `Deepgram found ${dgSpeakers.size === 1 ? "one speaker" : "no speaker labels"}, and the recording is too long for the independent speaker check, so it was not run. If more than one person spoke, please assign speakers by hand.` });
   }
-  if ((await embedder.available()) && !tooLong && (dgSpeakers.size <= 1 || wantIdentification)) {
+  if (!fromPyannote && voiceReady && !tooLong && (dgSpeakers.size <= 1 || wantIdentification)) {
     try {
       independent = await independentSpeakers({ wavPath, config, embedder, signal, durationSeconds });
     } catch (error) {
@@ -148,12 +198,12 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
       warnings.push({ code: "VOICE_ANALYSIS_FAILED", message: "Independent voice analysis failed, so Deepgram's speaker labels were used without a second check." });
     }
   }
-  if (!independent && !tooLong && dgSpeakers.size <= 1 && (await embedder.available()) && !warnings.some((w) => w.code === "VOICE_ANALYSIS_FAILED")) {
+  if (!fromPyannote && !independent && !tooLong && dgSpeakers.size <= 1 && voiceReady && !warnings.some((w) => w.code === "VOICE_ANALYSIS_FAILED")) {
     warnings.push({ code: "VOICE_ANALYSIS_FAILED", message: "Independent voice analysis could not run, so Deepgram's speaker labels were used without a second check." });
   }
   if (independent) {
     internal.independentClusters = independent.clusters;
-    if (dgSpeakers.size <= 1 && independent.clusters >= 2) {
+    if (!fromPyannote && dgSpeakers.size <= 1 && independent.clusters >= 2) {
       // Deepgram merged voices that independent evidence separates: use the independent labels.
       result = relabelSpeakers(normalized, (word) => independent.labelOf(word));
       source = "independent";
@@ -161,7 +211,7 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
         code: "SPEAKERS_FROM_VOICE_ANALYSIS",
         message: `Deepgram detected ${dgSpeakers.size === 1 ? "a single speaker" : "no speaker labels"}, but independent voice analysis found ${independent.clusters} distinct voices. Please review the speaker labels.`,
       });
-    } else if (dgSpeakers.size >= 2 && independent.clusters > dgSpeakers.size) {
+    } else if (!fromPyannote && dgSpeakers.size >= 2 && independent.clusters > dgSpeakers.size) {
       warnings.push({ code: "POSSIBLE_MISSED_SPEAKER", message: `Voice analysis found ${independent.clusters} distinct voices where Deepgram found ${dgSpeakers.size}. Deepgram's labels were kept: please review.` });
     }
   }
@@ -171,7 +221,7 @@ export async function analyzeSpeakers({ normalized, wavPath, references, config,
   let voiceStatus = wantIdentification ? "completed" : "not_enrolled";
   const finalWords = result.groups.flat();
   const speakers = [...new Set(finalWords.map((w) => w.speaker).filter((s) => s !== null))].sort((a, b) => a - b);
-  if (wantIdentification && (await embedder.available())) {
+  if (wantIdentification && voiceReady) {
     try {
       const regionsBySpeaker = speakerRegionsFromWords(finalWords);
       const entries = [];
