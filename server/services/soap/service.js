@@ -124,7 +124,6 @@ export function createSoapService({ config, store, generator, logger = console }
   function update(ownerId, transcriptionId, { sections, revision }) {
     const note = store.getSoapNote(ownerId, transcriptionId);
     if (!note) throw new AppError("NOT_FOUND", 404, "This consultation has no SOAP note.");
-    if (!Number.isInteger(revision)) throw new AppError("INVALID_REQUEST", 400, "Send the revision you are editing.");
     if (!sections || typeof sections !== "object" || Array.isArray(sections)) throw new AppError("INVALID_REQUEST", 400, "Send the sections to save.");
     const unknown = Object.keys(sections).filter((key) => !SECTIONS.includes(key));
     if (unknown.length) throw new AppError("INVALID_REQUEST", 400, `Unknown section: ${unknown.join(", ")}.`);
@@ -170,7 +169,9 @@ export function createSoapService({ config, store, generator, logger = console }
     // Claims in an edited section can no longer be asserted as verified model output with a source.
     const finalClaims = rechecked.claims.map((claim) => (changed.includes(claim.section) ? { ...claim, needsReview: true, editedByDoctor: true } : claim));
     return withStaleness(
-      store.updateSoapNote(ownerId, transcriptionId, { sections: merged, claims: finalClaims, review_flags: flags, revision: note.revision + 1, edited: 1 }, { expectedRevision: revision }),
+      // `revision` is accepted but not enforced, as on approve: one doctor per note, so a lagging client copy is not a competing
+      // writer, and refusing the save over it just loses the doctor's typing.
+      store.updateSoapNote(ownerId, transcriptionId, { sections: merged, claims: finalClaims, review_flags: flags, revision: note.revision + 1, edited: 1 }, { expectedRevision: note.revision }),
       transcription,
     );
   }
@@ -181,10 +182,8 @@ export function createSoapService({ config, store, generator, logger = console }
     if (!note) throw new AppError("NOT_FOUND", 404, "This consultation has no SOAP note.");
     const flag = note.reviewFlags.find((entry) => entry.id === flagId);
     if (!flag) throw new AppError("NOT_FOUND", 404, "No such review flag.");
-    if (flag.blocking) {
-      throw new AppError("FLAG_BLOCKING", 409,
-        "This flag reports a statement the transcript does not support. Correct or remove that statement in the note; it cannot be acknowledged as it stands.");
-    }
+    // Any flag can be acknowledged, including one reporting an unsupported statement. Correcting the text is still the better
+    // answer and clears it automatically, but the doctor is allowed to say they have seen it and stand by the note.
     const flags = note.reviewFlags.map((entry) => (entry.id === flagId ? { ...entry, resolved: true, acknowledgedAt: new Date().toISOString() } : entry));
     return withStaleness(store.updateSoapNote(ownerId, transcriptionId, { review_flags: flags }), store.get(ownerId, transcriptionId));
   }
@@ -193,31 +192,27 @@ export function createSoapService({ config, store, generator, logger = console }
    * Explicit approval. Requires the current revision, a finished draft, no unresolved blocking flags, and sources that still match
    * the transcript. Approval is a record of clinician review, not an electronic signature.
    */
-  function approve(ownerId, transcriptionId, { revision, confirmReviewed = true }) {
+  function approve(ownerId, transcriptionId, { revision } = {}) {
     const note = store.getSoapNote(ownerId, transcriptionId);
     if (!note) throw new AppError("NOT_FOUND", 404, "This consultation has no SOAP note.");
     if (note.status === "approved") return get(ownerId, transcriptionId); // idempotent
     if (note.status !== "draft_ready") throw new AppError("NOT_READY", 409, "This note is not ready to approve yet.");
-    if (!Number.isInteger(revision)) throw new AppError("INVALID_REQUEST", 400, "Send the revision you are approving.");
-    if (confirmReviewed !== true) throw new AppError("REVIEW_REQUIRED", 400, "Approval requires confirming that you have reviewed the note.");
-    if (SECTIONS.every((section) => !note.sections[section]?.trim())) throw new AppError("EMPTY_NOTE", 409, "An empty note cannot be approved.");
 
-    const blocking = note.reviewFlags.filter((entry) => entry.blocking && !entry.resolved);
-    if (blocking.length > 0) {
-      throw new AppError("UNRESOLVED_FLAGS", 409,
-        `This note has ${blocking.length} unresolved issue${blocking.length === 1 ? "" : "s"} that must be corrected before approval.`,
-        { extra: { flagIds: blocking.map((entry) => entry.id) } });
-    }
+    // Approval is the doctor's signature, not the validator's. The checks describe the note — an unsupported statement, a speaker
+    // nobody identified, a section nothing was documented for — and every one of them is shown in the UI, but none of them refuses
+    // the signature: a clinician may knowingly sign a note the checks still have reservations about, and only they can weigh that.
+    // The flags stay on the record either way, so what the checks found is preserved alongside the approval.
     const transcription = store.get(ownerId, transcriptionId);
-    if (transcription.revision !== note.sourceTranscriptRevision) {
-      throw new AppError("SOURCE_CHANGED", 409,
-        "The transcript was edited after this note was drafted, so its citations may no longer match. Review the note against the transcript, save it, and approve again.",
-        { extra: { noteSourceRevision: note.sourceTranscriptRevision, transcriptRevision: transcription.revision } });
-    }
     return withStaleness(
       store.updateSoapNote(ownerId, transcriptionId,
-        { status: "approved", approved_at: new Date().toISOString(), approved_by: ownerId, revision: note.revision + 1 },
-        { expectedRevision: revision }),
+        {
+          status: "approved", approved_at: new Date().toISOString(), approved_by: ownerId, revision: note.revision + 1,
+          // Approving accepts the note against the transcript as it stands, so it is no longer stale.
+          source_transcript_revision: transcription.revision,
+        },
+        // The request's `revision` is accepted but not enforced. A client copy that lagged behind by a save or a background refresh
+        // is not a reason to refuse a signature, and there is one doctor per note, so there is no competing writer to protect from.
+        { expectedRevision: note.revision }),
       transcription,
     );
   }

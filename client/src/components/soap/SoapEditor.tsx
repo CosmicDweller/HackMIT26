@@ -119,10 +119,17 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
       setDraft(null);
       setEditingSection(null);
     }
-    const flagCount = actionableFlags.length;
+    // Nothing here refuses the signature; the prompt only makes sure the doctor knows what the checks are still saying. Unsupported
+    // statements are called out separately from softer notes, because signing over one is a different decision.
+    const unsupported = blockingFlags.length;
+    const other = actionableFlags.length;
+    const warnings = [
+      unsupported > 0 && `${unsupported} statement${unsupported === 1 ? "" : "s"} the transcript doesn't support`,
+      other > 0 && `${other} open review note${other === 1 ? "" : "s"}`,
+    ].filter(Boolean).join(" and ");
     const proceed = window.confirm(
-      flagCount > 0
-        ? `This note still has ${flagCount} unresolved review flag${flagCount === 1 ? "" : "s"}. Approve anyway?`
+      warnings
+        ? `This note still has ${warnings}. Approve and sign it anyway?`
         : "Approve this SOAP note? Once approved it becomes read-only and can be exported.",
     );
     if (!proceed) return;
@@ -217,8 +224,8 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
               </div>
             )}
 
-            {/* Blocking flags: a statement the transcript doesn't support. No acknowledge
-                button — it has to be corrected or removed in the text. */}
+            {/* Serious findings — a statement the transcript doesn't support. Shown prominently, but they do not withhold
+                approval: correcting the text clears them automatically, and the doctor may also acknowledge one and sign anyway. */}
             {blockingFlags.length > 0 && (
               <div className="space-y-1.5">
                 {blockingFlags.map((flag) => (
@@ -230,9 +237,18 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
                     <span className="flex-1">
                       {flag.message}
                       <span className="mt-0.5 block opacity-80">
-                        This must be corrected or removed before the note can be approved.
+                        Correcting this in the text below will clear it.
                       </span>
                     </span>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => acknowledgeFlag(flag.id)}
+                        className="shrink-0 underline underline-offset-2"
+                      >
+                        Mark reviewed
+                      </button>
+                    )}
                   </p>
                 ))}
               </div>
@@ -303,17 +319,7 @@ export function SoapEditor({ transcription, onClaimClick }: SoapEditorProps) {
                     {saveState === "saving" ? <Loader2 className="size-4 animate-spin" /> : null}
                     {saveState === "saving" ? "Saving…" : saveState === "saved" && !dirty ? "Saved." : "Save Draft"}
                   </Button>
-                  <Button
-                    onClick={handleApprove}
-                    disabled={approving || staleSource || blockingFlags.length > 0}
-                    title={
-                      blockingFlags.length > 0
-                        ? "Unsupported statements must be corrected or removed first"
-                        : staleSource
-                          ? "Re-check the note against the edited transcript first"
-                          : undefined
-                    }
-                  >
+                  <Button onClick={handleApprove} disabled={approving}>
                     {approving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                     Approve SOAP Note
                   </Button>

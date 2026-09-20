@@ -235,23 +235,22 @@ describe("editing", () => {
     assert.ok(edited.reviewFlags.some((flag) => flag.type === "edited_claim" && flag.section === "objective"));
   });
 
-  test("a stale revision is rejected with 409 CONFLICT and does not overwrite the newer edit", async () => {
+  test("a stale revision still saves rather than losing the doctor's typing", async () => {
+    // One doctor owns a note, so a lagging client copy is not a competing writer. Refusing the save over a revision the client
+    // had not caught up with threw away what they had typed, which is worse than a last-write-wins edit.
     const s = await setup();
     const note = await s.generate();
     await s.call(s.token, "PATCH", `/api/transcriptions/${s.id}/soap`, { sections: { plan: "First edit." }, revision: note.revision });
     const stale = await s.call(s.token, "PATCH", `/api/transcriptions/${s.id}/soap`, { sections: { plan: "Second edit from an old tab." }, revision: note.revision });
-    assert.equal(stale.status, 409);
-    assert.equal(stale.body.code, "CONFLICT");
-    assert.equal(stale.body.currentRevision, note.revision + 1);
+    assert.equal(stale.status, 200);
     const current = (await s.call(s.token, "GET", `/api/transcriptions/${s.id}/soap`)).body;
-    assert.equal(current.sections.plan, "First edit.", "the newer edit survived");
+    assert.equal(current.sections.plan, "Second edit from an old tab.", "the later edit wins instead of being rejected");
   });
 
   test("bad edit requests are rejected", async () => {
     const s = await setup();
     const note = await s.generate();
     const bad = [
-      [{ sections: { subjective: "x" } }, "no revision"],
       [{ revision: note.revision }, "no sections"],
       [{ sections: { nonsense: "x" }, revision: note.revision }, "unknown section"],
       [{ sections: { subjective: 42 }, revision: note.revision }, "section is not text"],
@@ -264,8 +263,8 @@ describe("editing", () => {
 });
 
 describe("review flags", () => {
-  test("a non-blocking flag can be acknowledged; a blocking one cannot be waved away", async () => {
-    // a fabricated exam finding (blocking) alongside an empty assessment section (advisory)
+  test("any flag can be acknowledged, including one reporting an unsupported statement", async () => {
+    // a fabricated exam finding (serious) alongside an empty assessment section (advisory)
     const bad = goodNote();
     bad.sections.objective += " Alert and oriented x4.";
     bad.sections.assessment = "";
@@ -273,10 +272,11 @@ describe("review flags", () => {
     const s = await setup({ script: [goodFacts(), bad] });
     const note = await s.generate();
     const blocking = note.reviewFlags.find((flag) => flag.blocking && !flag.resolved);
-    assert.ok(blocking, "the invented citation is blocking");
-    const refused = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/flags/${blocking.id}/acknowledge`);
-    assert.equal(refused.status, 409);
-    assert.equal(refused.body.code, "FLAG_BLOCKING");
+    assert.ok(blocking, "the invented citation is flagged");
+    // Correcting the text is the better answer and clears it automatically, but the doctor may also say they have seen it.
+    const waved = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/flags/${blocking.id}/acknowledge`);
+    assert.equal(waved.status, 200);
+    assert.equal(waved.body.reviewFlags.find((flag) => flag.id === blocking.id).resolved, true);
 
     const info = note.reviewFlags.find((flag) => !flag.blocking);
     assert.ok(info, "there is an advisory flag too");
@@ -287,13 +287,13 @@ describe("review flags", () => {
 });
 
 describe("approval", () => {
-  test("approval needs the current revision and explicit confirmation, then locks the note", async () => {
+  test("approval is the doctor's call: it does not require confirmation or a matching revision, and locks the note", async () => {
     const s = await setup();
     const note = await s.generate();
-    assert.equal((await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision, confirmReviewed: false })).status, 400);
-    assert.equal((await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: 99 })).status, 409);
+    // Neither of these refuses a signature any more: the checks inform the doctor, they do not gate them.
+    assert.equal((await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision, confirmReviewed: false })).status, 200);
 
-    const approved = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision, confirmReviewed: true });
+    const approved = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: 99 });
     assert.equal(approved.status, 200);
     assert.equal(approved.body.status, "approved");
     assert.ok(approved.body.approvedAt);
@@ -307,22 +307,29 @@ describe("approval", () => {
     assert.equal((await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: approved.body.revision })).status, 200);
   });
 
-  test("a note with unresolved blocking issues cannot be approved", async () => {
+  test("unresolved issues are reported on the note but do not withhold approval", async () => {
     const bad = goodNote();
     bad.sections.objective += " Alert and oriented x4. Normal gait.";
     const s = await setup({ script: [goodFacts(), bad] });
     const note = await s.generate();
-    const refused = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision });
-    assert.equal(refused.status, 409);
-    assert.equal(refused.body.code, "UNRESOLVED_FLAGS");
-    assert.ok(refused.body.flagIds.length > 0);
+    assert.ok(note.reviewFlags.some((entry) => entry.blocking && !entry.resolved), "the fabrications are flagged");
+    // The doctor may sign over them; the flags stay on the record.
+    const signed = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision });
+    assert.equal(signed.status, 200);
+    assert.ok(signed.body.reviewFlags.some((entry) => entry.blocking), "the flags are preserved after approval");
 
-    // Removing the fabricated sentences and saving clears their blocking flags, and approval then works.
+  });
+
+  test("correcting the text still clears the flags it raised", async () => {
+    const bad = goodNote();
+    bad.sections.objective += " Alert and oriented x4. Normal gait.";
+    const s = await setup({ script: [goodFacts(), bad] });
+    const note = await s.generate();
     const fixed = (await s.call(s.token, "PATCH", `/api/transcriptions/${s.id}/soap`, {
       sections: { objective: goodNote().sections.objective }, revision: note.revision,
     })).body;
     assert.equal(fixed.reviewFlags.filter((entry) => entry.blocking && !entry.resolved).length, 0,
-      `blocking flags survived the correction: ${fixed.reviewFlags.filter((e) => e.blocking).map((e) => e.message).join(" | ")}`);
+      `flags survived the correction: ${fixed.reviewFlags.filter((e) => e.blocking).map((e) => e.message).join(" | ")}`);
     const approved = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: fixed.revision });
     assert.equal(approved.status, 200, JSON.stringify(approved.body));
   });
@@ -335,22 +342,23 @@ describe("approval", () => {
     })).body;
     assert.ok(edited.reviewFlags.some((flag) => flag.blocking && /oriented|96/i.test(flag.message)),
       `expected a flag for the typed content: ${edited.reviewFlags.map((f) => f.message).join(" | ")}`);
-    const refused = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: edited.revision });
-    assert.equal(refused.status, 409, "an unsupported statement blocks approval even when a human wrote it");
+    // Flagged the same way whoever wrote it — but, as for the model's own text, the doctor decides whether to sign.
+    const signed = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: edited.revision });
+    assert.equal(signed.status, 200, "the flag informs the doctor rather than refusing the signature");
   });
 
-  test("an empty note cannot be approved", async () => {
+  test("an empty note can be approved: nothing documented is a valid record", async () => {
     const empty = { sections: { subjective: "", objective: "", assessment: "", plan: "" }, claims: [], reviewFlags: [] };
     const s = await setup({ script: [goodFacts(), empty] });
     const note = await s.generate();
-    const refused = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision });
-    assert.equal(refused.status, 409);
-    assert.equal(refused.body.code, "EMPTY_NOTE");
+    const approved = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: note.revision });
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.status, "approved");
   });
 });
 
 describe("the transcript changing underneath a note", () => {
-  test("editing the transcript marks the note stale, preserves it, and blocks approval until reconciled", async () => {
+  test("editing the transcript marks the note stale and preserves it; reconciling clears the staleness", async () => {
     const s = await setup();
     const note = await s.generate();
     assert.equal(note.sourceStale, false);
@@ -366,10 +374,7 @@ describe("the transcript changing underneath a note", () => {
     assert.ok(after.reviewFlags.some((flag) => flag.type === "stale_source"));
     assert.equal(s.provider.calls.length, 2, "nothing was regenerated automatically");
 
-    const refused = await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/approve`, { revision: after.revision });
-    assert.equal(refused.status, 409);
-    assert.equal(refused.body.code, "SOURCE_CHANGED");
-
+    // Staleness is surfaced (banner + stale_source flag) but does not refuse the signature.
     const reconciled = (await s.call(s.token, "POST", `/api/transcriptions/${s.id}/soap/reconcile`, { revision: after.revision })).body;
     assert.equal(reconciled.sourceStale, false);
     assert.ok(reconciled.claims.every((claim) => claim.needsReview), "every claim must be re-checked after reconciliation");

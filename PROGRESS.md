@@ -1,6 +1,35 @@
 # Progress
 
-## Current milestone
+## Current milestone — review checks no longer gate the doctor
+**Product decision (user's call): the validator informs, it never refuses.**
+Saving and approving now always succeed; every check still runs and every
+finding is still shown and stored, but none of them withholds a signature.
+
+Removed from `approve()`: `UNRESOLVED_FLAGS` (blocking flags),
+`SOURCE_CHANGED` (transcript edited since drafting), `EMPTY_NOTE`,
+`REVIEW_REQUIRED` (`confirmReviewed`), and the revision `CONFLICT`.
+Removed from `update()`: the required `revision` and its `CONFLICT`.
+`acknowledgeFlag` no longer refuses blocking flags (`FLAG_BLOCKING` is gone).
+
+Optimistic concurrency was dropped deliberately: there is one doctor per
+note, so a lagging client copy is not a competing writer, and refusing a save
+over it just lost their typing. Last write wins.
+
+Still enforced: ownership, the note existing, `draft_ready` before approval,
+section types/lengths, and an approved note staying read-only.
+
+UI: Approve is never disabled; serious findings are still shown in red and
+can now be acknowledged; the confirm prompt names what is outstanding
+("1 statement the transcript doesn't support and 2 open review notes") but
+always lets the doctor through. Approving also clears staleness, since
+signing accepts the note against the transcript as it stands.
+
+**Verified in the browser** on a note that previously could not be signed:
+edit -> "Saved." -> Approve -> approved, exports enabled. Server 509 pass /
+0 fail; client tsc, lint, build clean. Eight backend tests asserted the old
+gating and were rewritten to the new behaviour.
+
+## Previous milestone
 **The whole demo path works end to end against real services.** Verified in
 the browser: transcript -> speaker identification -> real Gemini SOAP note ->
 reconcile -> approve -> export. This had never completed before; approval was
