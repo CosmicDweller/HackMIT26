@@ -1,0 +1,61 @@
+{
+ "durationMs": 44786,
+ "turns": [
+  {
+   "speaker": "D",
+   "voice": "Reed (English (UK))",
+   "text": "Good afternoon, please have a seat and tell me what brings you in today.",
+   "startMs": 950,
+   "endMs": 5636
+  },
+  {
+   "speaker": "P",
+   "voice": "Reed (English (US))",
+   "text": "I have been very tired for about two weeks and I get dizzy when I stand up quickly.",
+   "startMs": 6286,
+   "endMs": 11581
+  },
+  {
+   "speaker": "D",
+   "voice": "Reed (English (UK))",
+   "text": "How long have you been feeling this way, and does anything make it better?",
+   "startMs": 12231,
+   "endMs": 16566
+  },
+  {
+   "speaker": "P",
+   "voice": "Reed (English (US))",
+   "text": "It comes and goes, mostly in the afternoon, and resting seems to help a little.",
+   "startMs": 17216,
+   "endMs": 22719
+  },
+  {
+   "speaker": "D",
+   "voice": "Reed (English (UK))",
+   "text": "I would like to check your blood pressure and listen to your heart now.",
+   "startMs": 23369,
+   "endMs": 27320
+  },
+  {
+   "speaker": "P",
+   "voice": "Reed (English (US))",
+   "text": "I take one tablet for my blood pressure every morning and a vitamin most days.",
+   "startMs": 27970,
+   "endMs": 32993
+  },
+  {
+   "speaker": "D",
+   "voice": "Reed (English (UK))",
+   "text": "Are you taking any medication regularly, including vitamins or supplements?",
+   "startMs": 33643,
+   "endMs": 38874
+  },
+  {
+   "speaker": "P",
+   "voice": "Reed (English (US))",
+   "text": "No, nothing else, except a glass of wine now and then at the weekend.",
+   "startMs": 39524,
+   "endMs": 44386
+  }
+ ]
+}

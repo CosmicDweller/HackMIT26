@@ -23,3 +23,9 @@ data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Voice lab: generated synthetic dataset, embeddings, Python environment and models (never commit voice data)
+voice/.venv/
+voice/models/
+voice/lab/data/
+voice/lab/*.npz

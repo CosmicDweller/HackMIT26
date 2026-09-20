@@ -17,7 +17,7 @@ export async function makeConfig(overrides = {}) {
   // Tests default to the local engine (fast, no network). Deepgram tests opt in explicitly.
   const config = {
     ...loadConfig({}), tmpDir, uploadDir: path.join(root, "uploads"), dbPath: path.join(root, "db", "test.sqlite"),
-    sttEngine: "local", deepgramApiKey: "", ...overrides,
+    sttEngine: "local", deepgramApiKey: "", voiceEnabled: false, voiceProfileKey: "", ...overrides,
   };
   return { config, root, tmpDir, cleanup: () => rm(root, { recursive: true, force: true }) };
 }

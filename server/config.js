@@ -79,6 +79,16 @@ export function loadConfig(env = process.env) {
     dbPath: path.resolve(serverDir, env.DB_PATH ?? "data/transcripts.sqlite"),
     // Doctor authentication: Supabase Auth JWTs are verified against the project's published keys.
     supabaseUrl: env.SUPABASE_URL ?? "",
+    // Doctor voice profiles (biometric): local ECAPA-TDNN embeddings, encrypted at rest with VOICE_PROFILE_KEY.
+    voiceEnabled: env.VOICE_ENABLED !== "false",
+    voicePython: path.resolve(serverDir, env.VOICE_PYTHON ?? "voice/.venv/bin/python"),
+    voiceScript: path.join(serverDir, "voice", "embed.py"),
+    voiceProfileKey: env.VOICE_PROFILE_KEY ?? "",
+    voiceTimeoutMs: intFromEnv(env, "VOICE_TIMEOUT_MS", 10 * 60_000),
+    // The independent speaker check runs the segmentation model over the whole recording. Measured: about 2 minutes for 20 minutes of
+    // audio, and much worse than linear (over 10 minutes for two hours). Longer recordings skip it (with a warning); doctor
+    // identification, which embeds a bounded number of regions, still runs.
+    voiceIndependentMaxSeconds: intFromEnv(env, "VOICE_INDEPENDENT_MAX_SECONDS", 30 * 60),
     tmpDir: path.resolve(env.STT_TMP_DIR ?? path.join(os.tmpdir(), "stt-server")),
   };
 }

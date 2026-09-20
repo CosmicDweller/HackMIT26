@@ -538,3 +538,117 @@ clinical noise; whether an unusually slow uplink keeps a two-hour upload inside 
 The frontend (`client/`, owned by the frontend agent) currently caps recording at 60 s and uploads at 10 MB, and calls the synchronous
 route. Two-hour recordings need client changes (longer recording, chunk-free upload of the finished file to `/api/transcription-jobs`,
 and polling `GET /api/transcription-jobs/:jobId`). The existing client keeps working unchanged.
+
+---
+
+# Contract v4: doctor voice enrollment and speaker identification
+
+Additive to v1 to v3 (nothing was removed or renamed; a client that ignores the new fields keeps working). **Status: implemented on branch `lz`, verified against
+synthetic voices only. Not yet measured with real people.** See `docs/VOICE_EVALUATION.md` for the numbers and their limits.
+
+## Why, and what it is not
+
+Deepgram sometimes returns ONE speaker for a recording that has two (measured: 12% of 180 synthetic pairs, always a merge, never a wrong word). So the
+pipeline now has three independent jobs, kept apart on purpose:
+
+| Job | Who does it | Decides |
+| --- | --- | --- |
+| A. Transcription | Deepgram Nova-3 Medical (unchanged) | what was said, and when each word was said. **Never altered by voice analysis.** |
+| B. Diarization | Deepgram's speaker labels; when Deepgram finds at most one speaker, an independent check (segmentation model turn boundaries + ECAPA-TDNN voice embeddings + clustering) | how many voices there are and who spoke when |
+| C. Doctor verification | Local SpeechBrain ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`, Apache-2.0) against the doctor's enrolled profile, run on each speaker's own speech | whether a speaker's voice resembles the enrolled doctor |
+
+**A voice match is a suggestion, never an identity claim.** It does not log anyone in, does not set `role`, and does not change any transcript text.
+Audio for voice analysis stays on the backend machine (the same audio Deepgram already received; nothing extra is sent anywhere, and the voice model runs locally).
+
+## Voice profile endpoints (all require `Authorization: Bearer`; a doctor can only touch their own profile)
+
+### `GET /api/me/voice-profile`
+```json
+{ "status": "not_enrolled", "requiredSamples": 3,
+  "consent": { "version": "voice-enrollment-v1", "text": "I agree that this application may create and store a voiceprint ..." } }
+```
+`status`: `not_enrolled`, `enrolled` (also `enrolledAt`, `updatedAt`, `sampleCount`, `modelVersion`, `consentRecordedAt`) or `needs_reenrollment` (the voice model or
+embedding method changed since enrollment; the profile is ignored until the doctor enrolls again). Show `consent.text` next to the checkbox verbatim.
+Embeddings are NEVER returned.
+
+### `POST /api/me/voice-profile/enroll`  (`multipart/form-data`)
+| Field | |
+| --- | --- |
+| `samples` | exactly **3** audio files (repeat the field), each a clean recording of the doctor alone, about 10 to 30 s of speech (max 60 s, 25 MB) |
+| `consent` | the string `true` |
+| `consentVersion` | must equal `consent.version` from the GET above |
+
+`201` returns the same body as GET (`status: "enrolled"`). Enrolling again **replaces** the previous profile (one profile per doctor). All three samples are validated
+first; if any fails nothing is saved. The raw sample audio is deleted before the response is sent, whether it succeeded or not. Only encrypted voice embeddings are stored (AES-256-GCM, bound to the doctor's id).
+
+| Status | `error.code` | When |
+| --- | --- | --- |
+| 400 | `CONSENT_REQUIRED` | `consent` is not `true` or `consentVersion` is wrong. Nothing is processed. |
+| 400 | `INVALID_REQUEST` or `INVALID_AUDIO` | not exactly 3 files, or an unreadable upload; a file over 25 MB is `413` |
+| 409 | `INVALID_REQUEST` | an enrollment for this doctor is already running |
+| 422 | `ENROLLMENT_REJECTED` | `error.problems: [{ sample: 1-3 \| null, code, message }]`. Codes: `INVALID_AUDIO`, `SAMPLE_SILENT`, `SAMPLE_TOO_SHORT`, `SAMPLE_TOO_LONG`, `SAMPLE_CLIPPED`, `MULTIPLE_SPEAKERS_SUSPECTED`, `SAMPLES_DIFFER`. The `message` is safe to show the doctor as is; every one is recoverable by recording again. |
+| 401 | `UNAUTHENTICATED` | no or invalid token |
+| 503 | `SERVICE_UNAVAILABLE` | voice profiles are disabled or not set up on this server |
+
+### `DELETE /api/me/voice-profile`
+Requires the header `X-Confirm: delete-voice-profile` (else `400 CONFIRMATION_REQUIRED`). `204` when deleted, `404` when there was none. Deleting removes the encrypted profile permanently.
+Transcripts already made keep the `identificationStatus` they got at the time (that is a fact about that recording, not biometric data); deleting your profile does not rewrite them.
+
+## Transcription resource: additions
+
+```json
+{
+  "voiceIdentificationStatus": "completed",
+  "speakers": [
+    { "id": "speaker_0", "label": "Speaker 1", "role": "unassigned", "identificationStatus": "matched",  "suggestedRole": "doctor" },
+    { "id": "speaker_1", "label": "Speaker 2", "role": "unassigned", "identificationStatus": "unknown",  "suggestedRole": null }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `voiceIdentificationStatus` | `not_enrolled` (no profile: default, and what every earlier transcript shows), `completed` (the doctor's profile was compared with every speaker) or `unavailable` (a profile exists but the comparison could not run; speakers are `unavailable`). |
+| `speakers[].identificationStatus` | `matched` (very likely the enrolled doctor), `unknown` (reliably does NOT sound like the doctor), `uncertain` (not enough speech, or not a clear enough result, to say either way) or `unavailable` (no profile, or the analysis did not run). |
+| `speakers[].suggestedRole` | `"doctor"` only when `matched`, else `null`. **Never `patient` or `other`: a voice that is not the doctor is `unknown`, not "the patient".** |
+| `speakers[].role` | Unchanged: still set only by the doctor's own PATCH. The UI should show `suggestedRole` as a suggestion (for example a "Looks like you" badge with a one-tap confirm), never as a fact. |
+| `speakerSource` | `deepgram` (Deepgram's labels), `independent` (Deepgram found at most one speaker and independent voice analysis separated the voices) or `null` (older transcripts and the local engine). |
+| `warnings[]` | New codes: `SPEAKERS_FROM_VOICE_ANALYSIS` (the speakers came from independent analysis: please review), `POSSIBLE_MISSED_SPEAKER` (analysis heard more voices than Deepgram; Deepgram's labels were kept), `INDEPENDENT_SPEAKER_CHECK_SKIPPED` (Deepgram found at most one speaker and the recording is over 30 minutes, so the independent check was not run: assign speakers by hand if several people spoke), `VOICE_ANALYSIS_FAILED` (the independent check could not run), `VOICE_IDENTIFICATION_FAILED` (doctor identification was unavailable). Transcript text and Deepgram's labels are unaffected by any of these. |
+| `segments[].needsReview` | Now also `true` for every segment of an `uncertain` speaker. |
+
+Scores and similarity numbers are internal and are never returned (a cosine similarity is not a probability and would be misread as one).
+
+## Safety policy (what the backend guarantees)
+
+1. A `matched` speaker needs a strong match, at least 3 speech regions and 6 s of speech, and must be the ONLY speaker in the recording that reaches the match line. Two close candidates are `uncertain`, never a guess.
+2. Below the reject line with enough evidence is `unknown`. Not the doctor never means patient.
+3. Too little speech is `uncertain`, not `matched` and not `unknown`.
+4. Independent diarization runs only when Deepgram found at most one speaker (over-splitting would fabricate speakers, under-splitting merely keeps today's behaviour). It needs one region of at least 2.5 s per voice, so a cough cannot become a speaker.
+5. No transcript word, timestamp or punctuation is changed, dropped or duplicated by the analysis; only the speaker label of a word can differ. Timestamps stay recording-wide (a two-hour recording is analysed in bounded regions; the model process never loads a whole file).
+6. Any failure of the voice model degrades to the previous behaviour with a warning; the transcript is never lost.
+7. The doctor's `role` always wins: the model only suggests.
+
+## Known limits (measured, on synthetic voices)
+
+- Two voices that are almost identical (same underlying voice) cannot be separated by any model; they stay one speaker and, if it is the doctor's voice, both are `matched`. Rare among real people but possible (relatives, or the same person on two lines).
+- A very short reply (a couple of seconds) inside a long monologue may be separated, but is only `uncertain` (too little evidence), never `matched`.
+- Short recordings often end up `uncertain`.
+- The independent check (only used when Deepgram finds at most one speaker) costs about 2 minutes per 20 minutes of audio and much more beyond that, so it is skipped above `VOICE_INDEPENDENT_MAX_SECONDS` (default 1800). Doctor identification still runs at any length (measured on a 2-hour recording: 5 s, 621 MB peak in the model process).
+- Hoarse or very variable voices can be rejected at enrollment or score lower than the thresholds expect.
+- The voice thresholds were calibrated on text-to-speech voices. Text-to-speech is far more consistent than people, so real-world error rates are unknown and must be measured with consenting real speakers before anyone relies on the numbers.
+- Speakers with unusually similar recording conditions (or a different microphone from the enrollment) are handled by multi-condition enrollment, but this is measured only with simulated channel changes.
+- Already-finished transcripts cannot be re-analysed: recordings are deleted when a job completes (v3 retention), and this feature does not change that. Enroll first, then record. A "reprocess speakers" endpoint would need audio retention, which is a privacy decision for the product owner; it is intentionally not implemented.
+
+## Privacy and security
+
+Voiceprints are biometric data. They are: created only after explicit, versioned consent; stored encrypted at rest (AES-256-GCM, key in `VOICE_PROFILE_KEY`, never in the repo); bound to the owner's id (a copied row does not decrypt for another account); never returned by any endpoint;
+never logged (no audio, embeddings, scores or transcript text in logs); processed only by the local model (no third-party voice service); never used to authenticate anyone; deletable at any time with an explicit confirmation.
+Raw enrollment audio is removed before the enrollment response is sent. The application treats a voice match as advisory only.
+
+## Frontend integration checklist
+
+1. Settings screen: `GET /api/me/voice-profile` -> show status; enrollment form with the verbatim consent text, an unchecked checkbox, and three recordings; on `422 ENROLLMENT_REJECTED` show each `problems[].message` next to its sample number.
+2. Transcript screen: keep using `role`. Where `speakers[].suggestedRole === "doctor"` offer "This looks like you" with a confirm button that PATCHes the role. `identificationStatus: "uncertain"` and segments with `needsReview` deserve a visible "please check" state; `unknown` needs no special message.
+3. Show `warnings` with code `SPEAKERS_FROM_VOICE_ANALYSIS` as a neutral notice ("speakers were separated by voice analysis; please review").
+4. A "Delete my voice profile" action in settings that sends `X-Confirm: delete-voice-profile`.
+5. Everything else (jobs, polling, segment editing) is unchanged.

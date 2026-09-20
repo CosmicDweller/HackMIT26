@@ -184,51 +184,12 @@ export function reportedModels(result) {
  * Returns { empty, segments, speakerIndices, diarizationStatus, meta }. `empty` means no speech.
  * Throws DeepgramError("PROVIDER_MALFORMED_RESPONSE") when required data is missing.
  */
-export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85, reviewSpeakerConfidence = 0.6 } = {}) {
-  const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
-  if (!alternative || !Array.isArray(alternative.words)) throw new DeepgramError("PROVIDER_MALFORMED_RESPONSE");
-
-  const diarizeInfo = result.metadata?.diarize_info;
-  const diarizeRan = Boolean(diarizeInfo);
-  const meta = {
-    requestId: typeof result.metadata?.request_id === "string" ? result.metadata.request_id : null,
-    models: reportedModels(result),
-    diarizeModel: diarizeRan ? { arch: diarizeInfo.arch ?? null, modelUuid: diarizeInfo.model_uuid ?? null } : null,
-    providerDurationSeconds: Number.isFinite(result.metadata?.duration) ? result.metadata.duration : null,
-  };
-
-  const toWord = (raw) => ({
-    text: String(raw.punctuated_word ?? raw.word ?? "").trim(),
-    start: raw.start,
-    end: raw.end,
-    valid: validTime(raw),
-    // Never assign a speaker unless the diarizer actually ran.
-    speaker: diarizeRan && Number.isInteger(raw.speaker) && raw.speaker >= 0 ? raw.speaker : null,
-    speakerConfidence: Number.isFinite(raw.speaker_confidence) ? raw.speaker_confidence : null,
-    confidence: Number.isFinite(raw.confidence) ? raw.confidence : null,
-  });
-
-  const words = alternative.words.map(toWord).filter((word) => word.text);
-  if (words.length === 0) {
-    return { empty: true, segments: [], speakerIndices: [], diarizationStatus: diarizeRan ? "completed" : "failed", meta };
-  }
-
-  // 1. Utterance groups (boundaries only). Use them only when they account for exactly the channel words.
-  let groups;
-  const utterances = result.results?.utterances;
-  if (Array.isArray(utterances) && utterances.length > 0) {
-    const fromUtterances = utterances.map((utterance) => (Array.isArray(utterance.words) ? utterance.words.map(toWord).filter((word) => word.text) : []));
-    if (fromUtterances.flat().length === words.length) groups = fromUtterances.filter((group) => group.length > 0);
-  }
-  // No usable utterances: group the words by pauses instead.
-  groups ??= words.reduce((acc, word) => {
-    const last = acc.at(-1)?.at(-1);
-    // A word without a usable time cannot start a new group: it stays with its neighbours.
-    if (!last || (last.valid && word.valid && (word.start - last.end) * 1000 >= MERGE_GAP_MS)) acc.push([word]);
-    else acc.at(-1).push(word);
-    return acc;
-  }, []);
-
+/**
+ * Group words into segments: split each utterance group at every change of speaker, re-join same-speaker fragments that split
+ * mid-sentence after a short pause, then time each segment from its own valid words. Used by the normalizer and again after
+ * speaker labels are reassigned from independent voice analysis (every word and timestamp is preserved either way).
+ */
+export function segmentsFromWords(groups, { reviewWordConfidence = 0.85, reviewSpeakerConfidence = 0.6 } = {}) {
   // 2. Split every group at each change of speaker.
   const runs = [];
   groups.forEach((group, groupIndex) => {
@@ -288,6 +249,56 @@ export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85,
     };
   });
 
+  return segments;
+}
+
+export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85, reviewSpeakerConfidence = 0.6 } = {}) {
+  const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
+  if (!alternative || !Array.isArray(alternative.words)) throw new DeepgramError("PROVIDER_MALFORMED_RESPONSE");
+
+  const diarizeInfo = result.metadata?.diarize_info;
+  const diarizeRan = Boolean(diarizeInfo);
+  const meta = {
+    requestId: typeof result.metadata?.request_id === "string" ? result.metadata.request_id : null,
+    models: reportedModels(result),
+    diarizeModel: diarizeRan ? { arch: diarizeInfo.arch ?? null, modelUuid: diarizeInfo.model_uuid ?? null } : null,
+    providerDurationSeconds: Number.isFinite(result.metadata?.duration) ? result.metadata.duration : null,
+  };
+
+  const toWord = (raw) => ({
+    text: String(raw.punctuated_word ?? raw.word ?? "").trim(),
+    start: raw.start,
+    end: raw.end,
+    valid: validTime(raw),
+    // Never assign a speaker unless the diarizer actually ran.
+    speaker: diarizeRan && Number.isInteger(raw.speaker) && raw.speaker >= 0 ? raw.speaker : null,
+    speakerConfidence: Number.isFinite(raw.speaker_confidence) ? raw.speaker_confidence : null,
+    confidence: Number.isFinite(raw.confidence) ? raw.confidence : null,
+  });
+
+  const words = alternative.words.map(toWord).filter((word) => word.text);
+  if (words.length === 0) {
+    return { empty: true, segments: [], speakerIndices: [], diarizationStatus: diarizeRan ? "completed" : "failed", meta };
+  }
+
+  // 1. Utterance groups (boundaries only). Use them only when they account for exactly the channel words.
+  let groups;
+  const utterances = result.results?.utterances;
+  if (Array.isArray(utterances) && utterances.length > 0) {
+    const fromUtterances = utterances.map((utterance) => (Array.isArray(utterance.words) ? utterance.words.map(toWord).filter((word) => word.text) : []));
+    if (fromUtterances.flat().length === words.length) groups = fromUtterances.filter((group) => group.length > 0);
+  }
+  // No usable utterances: group the words by pauses instead.
+  groups ??= words.reduce((acc, word) => {
+    const last = acc.at(-1)?.at(-1);
+    // A word without a usable time cannot start a new group: it stays with its neighbours.
+    if (!last || (last.valid && word.valid && (word.start - last.end) * 1000 >= MERGE_GAP_MS)) acc.push([word]);
+    else acc.at(-1).push(word);
+    return acc;
+  }, []);
+
+  const segments = segmentsFromWords(groups, { reviewWordConfidence, reviewSpeakerConfidence });
+
   const labelled = words.filter((word) => word.speaker !== null).length;
   let diarizationStatus;
   if (!diarizeRan || labelled === 0) diarizationStatus = "failed";
@@ -300,6 +311,8 @@ export function normalizeDeepgramResponse(result, { reviewWordConfidence = 0.85,
     speakerIndices: [...new Set(segments.map((segment) => segment.providerSpeaker).filter((speaker) => speaker !== null))].sort((a, b) => a - b),
     diarizationStatus,
     meta,
+    // The word-level source data, for re-labelling speakers without touching any word: [[word]] utterance groups.
+    groups,
   };
 }
 
@@ -328,5 +341,23 @@ export function minorSpeakers(segments) {
   }
   if (perSpeaker.size < 3) return []; // a second speaker with little speech is normal (a short answer), so require 3+
   return [...perSpeaker.values()].filter((entry) => total > 0 && entry.seconds / total < MINOR_SPEAKER_SHARE && entry.seconds < MINOR_SPEAKER_MAX_SECONDS);
+}
+
+/**
+ * Re-label every word's speaker with `speakerOf(word)` (a speaker number or null) and rebuild the segments. Words, text,
+ * punctuation and timestamps are untouched: nothing is dropped or duplicated, only the speaker changes.
+ */
+export function relabelSpeakers(normalized, speakerOf, options = {}) {
+  const groups = normalized.groups.map((group) => group.map((word) => ({ ...word, speaker: speakerOf(word), speakerConfidence: null })));
+  const flat = groups.flat();
+  const segments = segmentsFromWords(groups, options);
+  const labelled = flat.filter((word) => word.speaker !== null).length;
+  return {
+    ...normalized,
+    groups,
+    segments,
+    speakerIndices: [...new Set(segments.map((s) => s.providerSpeaker).filter((speaker) => speaker !== null))].sort((a, b) => a - b),
+    diarizationStatus: labelled === 0 ? "failed" : labelled < flat.length ? "partial" : "completed",
+  };
 }
 
